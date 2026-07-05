@@ -1,0 +1,103 @@
+FocusNook Source-Available License 1.0
+
+Copyright (c) 2026 ProAnima Studio. All rights reserved.
+
+This repository is public for transparency, portfolio review, issue tracking,
+and collaboration with ProAnima Studio. It is not open source.
+
+1. Definitions
+
+"Software" means the FocusNook source code, applications, documentation,
+designs, assets, build scripts, and related materials in this repository.
+
+"Licensor" means ProAnima Studio and its authorized representatives.
+
+"You" means any individual or legal entity accessing, viewing, cloning,
+copying, or otherwise interacting with the Software.
+
+2. Limited Permission
+
+You may:
+
+- view the Software in this repository;
+- clone the repository only for private review, security evaluation, or to
+  prepare a contribution intended to be submitted back to Licensor;
+- run the Software locally only for private evaluation of this repository.
+
+These permissions are personal, revocable, non-transferable, non-exclusive,
+and do not grant ownership or any broader license.
+
+3. Restrictions
+
+Unless you have prior written permission from Licensor, you may not:
+
+- use the Software or any substantial portion of it in production;
+- use the Software for commercial purposes;
+- sell, rent, sublicense, host, or provide the Software as a service;
+- copy, modify, adapt, translate, merge, or create derivative works except as
+  strictly necessary for private review or for a contribution submitted back to
+  Licensor;
+- publish, distribute, mirror, re-upload, or make available copies of the
+  Software or derivative works;
+- maintain a public fork for independent development;
+- remove or alter copyright notices, license notices, product names, or
+  attribution;
+- use the FocusNook name, ProAnima Studio name, logos, screenshots, icons, or
+  other brand assets in a way that suggests endorsement or affiliation;
+- use the Software to train, fine-tune, evaluate, or benchmark machine learning
+  models or code-generation systems without written permission.
+
+4. Contributions
+
+If you submit an issue, pull request, patch, design suggestion, text, or other
+contribution to this repository, you grant Licensor a perpetual, worldwide,
+irrevocable, sublicensable, royalty-free license to use, copy, modify, publish,
+distribute, and commercialize that contribution as part of FocusNook or related
+ProAnima Studio products.
+
+You represent that you have the right to grant this license and that your
+contribution does not knowingly infringe third-party rights.
+
+5. GitHub Forks
+
+GitHub may provide technical features such as forks, clones, and pull requests.
+The availability of those features does not grant permission to use, publish,
+distribute, or maintain independent versions of the Software. A temporary fork
+created only to submit a pull request back to this repository is allowed. Any
+other fork or derivative distribution requires prior written permission.
+
+6. Third-Party Components
+
+Third-party dependencies included through package managers, build tools, or
+lockfiles remain governed by their own licenses. This license applies only to
+the Software owned by Licensor.
+
+7. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT,
+SECURITY, OR RELIABILITY.
+
+8. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR SHALL NOT BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE
+DAMAGES, OR ANY LOSS OF PROFITS, DATA, GOODWILL, OR BUSINESS OPPORTUNITY,
+ARISING FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE.
+
+9. Termination
+
+Any violation of this license automatically terminates all permissions granted
+to you. Upon termination, you must stop using the Software and delete all copies
+and derivative works in your possession or control, except where retention is
+required by law.
+
+10. Commercial Licensing
+
+Commercial use, redistribution, hosted use, integration into another product,
+or independent fork maintenance requires a separate written agreement with
+ProAnima Studio.
+
+Contact: ProAnima Studio.
+

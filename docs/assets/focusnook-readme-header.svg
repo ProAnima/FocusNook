@@ -1,0 +1,92 @@
+<svg width="1280" height="420" viewBox="0 0 1280 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">FocusNook</title>
+  <desc id="desc">A calm product banner for FocusNook, an always-on-top daily planning overlay.</desc>
+  <defs>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1010 92) rotate(138) scale(510 420)">
+      <stop stop-color="#7C8FFF" stop-opacity="0.44"/>
+      <stop offset="0.45" stop-color="#43D4B7" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#11121A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 360) rotate(-22) scale(520 300)">
+      <stop stop-color="#63D29B" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="#7C8FFF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#11121A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="760" y1="76" x2="1045" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#26283A"/>
+      <stop offset="1" stop-color="#14151F"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#7C8FFF"/>
+      <stop offset="1" stop-color="#63D29B"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="420" rx="34" fill="#11121A"/>
+  <rect width="1280" height="420" rx="34" fill="url(#glowA)"/>
+  <rect width="1280" height="420" rx="34" fill="url(#glowB)"/>
+
+  <g opacity="0.38">
+    <path d="M80 96H570" stroke="#FFFFFF" stroke-opacity="0.08"/>
+    <path d="M80 322H620" stroke="#FFFFFF" stroke-opacity="0.08"/>
+    <path d="M100 72V348" stroke="#FFFFFF" stroke-opacity="0.06"/>
+    <path d="M1160 62V352" stroke="#FFFFFF" stroke-opacity="0.06"/>
+  </g>
+
+  <g transform="translate(92 88)">
+    <rect x="0" y="0" width="76" height="76" rx="22" fill="#1B1D2A" stroke="#FFFFFF" stroke-opacity="0.08"/>
+    <path d="M38 17C26.4 17 17 26.4 17 38C17 49.6 26.4 59 38 59C49.6 59 59 49.6 59 38" stroke="url(#line)" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M38 28V41L49 47" stroke="#F4F4F7" stroke-opacity="0.92" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="92" y="214" fill="#F4F4F7" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="72" font-weight="760" letter-spacing="-1">FocusNook</text>
+  <text x="96" y="260" fill="#A3A3B3" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="24" font-weight="500">A quiet always-on-top nook for today&apos;s tasks, notes, and reminders.</text>
+
+  <g transform="translate(96 302)">
+    <rect width="126" height="34" rx="17" fill="#7C8FFF" fill-opacity="0.14" stroke="#7C8FFF" stroke-opacity="0.34"/>
+    <text x="20" y="23" fill="#DDE3FF" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="13" font-weight="700">Local-first</text>
+    <rect x="142" width="132" height="34" rx="17" fill="#63D29B" fill-opacity="0.12" stroke="#63D29B" stroke-opacity="0.3"/>
+    <text x="162" y="23" fill="#D9F8E8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="13" font-weight="700">Voice capture</text>
+    <rect x="290" width="138" height="34" rx="17" fill="#F2B463" fill-opacity="0.12" stroke="#F2B463" stroke-opacity="0.28"/>
+    <text x="310" y="23" fill="#FFE9C7" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="13" font-weight="700">Gentle alerts</text>
+  </g>
+
+  <g filter="url(#softShadow)" transform="translate(760 70)">
+    <rect width="360" height="280" rx="28" fill="url(#panel)" stroke="#FFFFFF" stroke-opacity="0.08"/>
+    <rect x="22" y="24" width="316" height="38" rx="12" fill="#FFFFFF" fill-opacity="0.045"/>
+    <circle cx="44" cy="43" r="6" fill="#63D29B"/>
+    <text x="62" y="49" fill="#F4F4F7" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="14" font-weight="700">Today</text>
+    <path d="M298 43H320" stroke="#A3A3B3" stroke-width="2" stroke-linecap="round"/>
+    <path d="M309 32V54" stroke="#A3A3B3" stroke-width="2" stroke-linecap="round"/>
+
+    <g transform="translate(28 88)">
+      <rect width="304" height="42" rx="13" fill="#FFFFFF" fill-opacity="0.04"/>
+      <rect x="14" y="13" width="16" height="16" rx="5" fill="#63D29B"/>
+      <path d="M18 21L22 25L29 17" stroke="#11121A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="44" y="14" width="142" height="8" rx="4" fill="#F4F4F7" fill-opacity="0.86"/>
+      <rect x="44" y="27" width="88" height="6" rx="3" fill="#A3A3B3" fill-opacity="0.45"/>
+    </g>
+
+    <g transform="translate(28 140)">
+      <rect width="304" height="42" rx="13" fill="#FFFFFF" fill-opacity="0.04"/>
+      <rect x="14" y="13" width="16" height="16" rx="5" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.5"/>
+      <rect x="44" y="14" width="172" height="8" rx="4" fill="#F4F4F7" fill-opacity="0.86"/>
+      <rect x="44" y="27" width="108" height="6" rx="3" fill="#A3A3B3" fill-opacity="0.45"/>
+      <rect x="248" y="13" width="40" height="17" rx="8.5" fill="#F2B463" fill-opacity="0.18"/>
+      <text x="258" y="26" fill="#F2B463" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="10" font-weight="800">40%</text>
+    </g>
+
+    <g transform="translate(28 192)">
+      <rect width="304" height="42" rx="13" fill="#FFFFFF" fill-opacity="0.04"/>
+      <rect x="14" y="13" width="16" height="16" rx="5" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.5"/>
+      <rect x="44" y="14" width="128" height="8" rx="4" fill="#F4F4F7" fill-opacity="0.86"/>
+      <rect x="44" y="27" width="154" height="6" rx="3" fill="#A3A3B3" fill-opacity="0.45"/>
+      <path d="M270 14V21L276 25" stroke="#7C8FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="270" cy="21" r="13" stroke="#7C8FFF" stroke-opacity="0.42" stroke-width="1.5"/>
+    </g>
+  </g>
+</svg>
+

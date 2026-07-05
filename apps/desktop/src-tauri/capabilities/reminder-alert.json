@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "reminder-alert",
+  "description": "Минимальные права для окна напоминания — раздел 16 ТЗ: alert-окно не получает доступ к файловой системе и sync-командам.",
+  "windows": ["reminder-alert"],
+  "permissions": ["core:default"]
+}

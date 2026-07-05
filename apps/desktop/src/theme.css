@@ -1,0 +1,40 @@
+:root,
+[data-theme="light"] {
+  /* Полностью непрозрачные поверхности — прозрачным остаётся только край
+     окна за пределами скруглённой карточки (см. App.css .overlay-shell). */
+  --surface-gradient: linear-gradient(165deg, #ffffff 0%, #f4f5fa 100%);
+  --surface-border: rgba(15, 15, 30, 0.08);
+  --shadow-soft: 0 24px 48px rgba(20, 20, 45, 0.14), 0 2px 8px rgba(20, 20, 45, 0.06);
+  --text-primary: #16161f;
+  --text-secondary: #5b5b6b;
+  --text-tertiary: #93939f;
+  --divider: rgba(15, 15, 30, 0.07);
+  --control-bg: rgba(15, 15, 30, 0.045);
+  --control-bg-hover: rgba(15, 15, 30, 0.09);
+  --accent: #4a5fe0;
+  --accent-soft-bg: rgba(74, 95, 224, 0.1);
+  --accent-soft-border: rgba(74, 95, 224, 0.32);
+  --success: #1f9d6b;
+  --success-soft-bg: rgba(31, 157, 107, 0.12);
+  --warning: #b8720a;
+  --warning-soft-bg: rgba(184, 114, 10, 0.12);
+}
+
+[data-theme="dark"] {
+  --surface-gradient: linear-gradient(165deg, #20202f 0%, #121218 100%);
+  --surface-border: rgba(255, 255, 255, 0.07);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #f4f4f7;
+  --text-secondary: #a3a3b3;
+  --text-tertiary: #6f6f80;
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --accent: #7c8fff;
+  --accent-soft-bg: rgba(124, 143, 255, 0.16);
+  --accent-soft-border: rgba(124, 143, 255, 0.42);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+}
