@@ -19,6 +19,8 @@ vi.mock("./shared/commands", () => {
         close: reject,
         getFolderRailSide: () => Promise.resolve("left"),
         onFolderRailSideChanged: () => Promise.resolve(() => {}),
+        getCursorClientPosition: () => Promise.resolve({ x: 0, y: 0 }),
+        setIgnoreCursorEvents: () => Promise.resolve(),
       },
       profiles: { list: reject, create: reject, switchTo: reject },
       planItems: {
@@ -67,6 +69,11 @@ vi.mock("./shared/commands", () => {
         setNoteFolderSort: reject,
       },
       diagnostics: { export: reject },
+      serverSync: {
+        status: () => Promise.resolve({ available: true, connected: false, endpoint: null, message: null }),
+        connectDefault: reject,
+        disconnect: reject,
+      },
     },
     isAlertWindow: () => false,
   };

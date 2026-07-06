@@ -20,7 +20,7 @@ const {
   syncStart,
   syncDisconnect,
   serverSyncStatus,
-  serverSyncConnect,
+  serverSyncConnectDefault,
   serverSyncDisconnect,
 } = vi.hoisted(() => ({
   getAutostart: vi.fn().mockResolvedValue(false),
@@ -43,8 +43,8 @@ const {
   syncStatus: vi.fn().mockResolvedValue({ connected: false }),
   syncStart: vi.fn().mockResolvedValue(undefined),
   syncDisconnect: vi.fn().mockResolvedValue(undefined),
-  serverSyncStatus: vi.fn().mockResolvedValue({ connected: false, endpoint: null }),
-  serverSyncConnect: vi.fn().mockResolvedValue({ connected: true, endpoint: "https://sync.example.com" }),
+  serverSyncStatus: vi.fn().mockResolvedValue({ available: true, connected: false, endpoint: null, message: null }),
+  serverSyncConnectDefault: vi.fn().mockResolvedValue({ available: true, connected: true, endpoint: "https://focus.proanima.net", message: null }),
   serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -62,7 +62,11 @@ vi.mock("../shared/commands", () => ({
     },
     diagnostics: { export: exportDiagnostics },
     sync: { readiness: syncReadiness, status: syncStatus, start: syncStart, disconnect: syncDisconnect },
-    serverSync: { status: serverSyncStatus, connect: serverSyncConnect, disconnect: serverSyncDisconnect },
+    serverSync: {
+      status: serverSyncStatus,
+      connectDefault: serverSyncConnectDefault,
+      disconnect: serverSyncDisconnect,
+    },
   },
 }));
 
@@ -224,18 +228,17 @@ describe("SettingsPanel", () => {
     expect(syncDisconnect).toHaveBeenCalledWith("yandex_disk");
   });
 
-  it("saves the custom server sync connection", async () => {
+  it("enables the configured server sync connection", async () => {
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
-    await user.type(screen.getByLabelText("https://sync.example.com"), "https://sync.focusnook.test");
-    await user.type(screen.getByLabelText("Токен доступа"), "server-token");
+    await screen.findByText("Готово к подключению");
     const serverCard = screen.getByText("ProAnima VDS").closest(".sync-provider-row");
     const connectButton = serverCard?.querySelector("button");
 
     expect(connectButton).toBeTruthy();
     await user.click(connectButton as HTMLButtonElement);
 
-    expect(serverSyncConnect).toHaveBeenCalledWith("https://sync.focusnook.test", "server-token");
+    expect(serverSyncConnectDefault).toHaveBeenCalled();
   });
 });

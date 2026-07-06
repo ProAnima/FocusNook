@@ -9,6 +9,7 @@ import { commands, isAlertWindow, type FolderRailSide } from "./shared/commands"
 import { ThemeProvider } from "./shared/theme";
 import { LocaleProvider } from "./shared/locale";
 import { useLayerToggle, type ShortcutInfo } from "./shared/useLayerToggle";
+import { useDesktopCursorPassthrough } from "./shared/useDesktopCursorPassthrough";
 import { useLiveBackgroundPointer } from "./shared/useLiveBackgroundPointer";
 import { useLocale } from "./shared/useLocale";
 import { useProfiles } from "./shared/useProfiles";
@@ -204,6 +205,7 @@ function Shell() {
   const { front, toggleLayer, shortcutInfo, isDesktop } = useLayerToggle();
   const { effective } = useTheme();
   const folderRailSide = useFolderRailSide(isDesktop);
+  useDesktopCursorPassthrough(isDesktop);
   useLiveBackgroundPointer(effective);
   return isDesktop ? (
     <DesktopShell

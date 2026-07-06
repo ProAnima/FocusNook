@@ -984,6 +984,7 @@ pub fn run() {
             sync::disconnect_provider,
             server_sync::server_sync_status,
             server_sync::connect_server_sync,
+            server_sync::connect_default_server_sync,
             server_sync::disconnect_server_sync
         ])
         .run(tauri::generate_context!())

@@ -1,4 +1,5 @@
-use crate::profiles;
+use crate::{config, profiles, sync_log};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 const SERVER_SYNC_KEYRING_SERVICE: &str = "com.proanima.focusnook.server-sync";
@@ -7,6 +8,8 @@ const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ServerSyncCredentials {
+    #[serde(default)]
+    device_id: String,
     endpoint: String,
     token: String,
 }
@@ -14,8 +17,10 @@ struct ServerSyncCredentials {
 #[derive(Clone, Serialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerSyncStatus {
+    available: bool,
     connected: bool,
     endpoint: Option<String>,
+    message: Option<String>,
 }
 
 fn keyring_user(profile_id: &str) -> String {
@@ -76,8 +81,14 @@ fn entry(profile_id: &str) -> Result<keyring::Entry, String> {
         .map_err(|e| e.to_string())
 }
 
-fn store_credentials(profile_id: &str, endpoint: &str, token: &str) -> Result<(), String> {
+fn store_credentials(
+    profile_id: &str,
+    endpoint: &str,
+    token: &str,
+    device_id: &str,
+) -> Result<(), String> {
     let credentials = ServerSyncCredentials {
+        device_id: normalize_token(device_id)?,
         endpoint: normalize_endpoint(endpoint)?,
         token: normalize_token(token)?,
     };
@@ -104,20 +115,29 @@ fn delete_credentials(profile_id: &str) -> Result<(), String> {
     }
 }
 
-fn status_for_profile(profile_id: &str) -> Result<ServerSyncStatus, String> {
+fn status_for_profile(
+    profile_id: &str,
+    configured: bool,
+    message: Option<String>,
+) -> Result<ServerSyncStatus, String> {
     let credentials = load_credentials(profile_id)?;
     Ok(ServerSyncStatus {
+        available: configured,
         connected: credentials.is_some(),
         endpoint: credentials.map(|value| value.endpoint),
+        message,
     })
 }
 
 #[tauri::command]
 pub fn server_sync_status(
+    config_state: tauri::State<config::SyncProvidersConfig>,
     profiles_state: tauri::State<profiles::ProfilesState>,
 ) -> Result<ServerSyncStatus, String> {
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    status_for_profile(&profile_id)
+    let configured = config_state.server.is_some();
+    let message = (!configured).then(|| "server sync bootstrap is not configured".to_string());
+    status_for_profile(&profile_id, configured, message)
 }
 
 #[tauri::command]
@@ -127,8 +147,73 @@ pub fn connect_server_sync(
     token: String,
 ) -> Result<ServerSyncStatus, String> {
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    store_credentials(&profile_id, &endpoint, &token)?;
-    status_for_profile(&profile_id)
+    store_credentials(&profile_id, &endpoint, &token, "manual-device")?;
+    status_for_profile(&profile_id, true, None)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterDeviceRequest<'a> {
+    device_id: &'a str,
+    display_name: &'a str,
+    platform: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterDeviceResponse {
+    device_token: String,
+}
+
+async fn register_device(
+    endpoint: &str,
+    user_token: &str,
+    device_id: &str,
+) -> Result<String, String> {
+    let response = reqwest::Client::new()
+        .post(format!("{endpoint}/v1/devices"))
+        .bearer_auth(user_token)
+        .json(&RegisterDeviceRequest {
+            device_id,
+            display_name: "FocusNook desktop",
+            platform: std::env::consts::OS,
+        })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("sync server returned {}", response.status()));
+    }
+    let body = response
+        .json::<RegisterDeviceResponse>()
+        .await
+        .map_err(|e| e.to_string())?;
+    normalize_token(&body.device_token)
+}
+
+fn ensure_local_device_id(conn: &Connection) -> Result<String, String> {
+    sync_log::ensure_device_identity(conn)
+}
+
+#[tauri::command]
+pub async fn connect_default_server_sync(
+    db: tauri::State<'_, crate::db::Db>,
+    config_state: tauri::State<'_, config::SyncProvidersConfig>,
+    profiles_state: tauri::State<'_, profiles::ProfilesState>,
+) -> Result<ServerSyncStatus, String> {
+    let bootstrap = config_state
+        .server
+        .clone()
+        .ok_or_else(|| "server sync bootstrap is not configured".to_string())?;
+    let endpoint = normalize_endpoint(&bootstrap.endpoint)?;
+    let device_id = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        ensure_local_device_id(&conn)?
+    };
+    let token = register_device(&endpoint, &bootstrap.user_token, &device_id).await?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    store_credentials(&profile_id, &endpoint, &token, &device_id)?;
+    status_for_profile(&profile_id, true, None)
 }
 
 #[tauri::command]
@@ -151,14 +236,21 @@ mod tests {
     fn stores_server_credentials_per_profile() -> Result<(), String> {
         let profile_id = unique_profile_id();
 
-        store_credentials(&profile_id, "https://sync.example.com/", "secret-token")?;
+        store_credentials(
+            &profile_id,
+            "https://sync.example.com/",
+            "secret-token",
+            "device-a",
+        )?;
 
-        let status = status_for_profile(&profile_id)?;
+        let status = status_for_profile(&profile_id, true, None)?;
         assert_eq!(
             status,
             ServerSyncStatus {
+                available: true,
                 connected: true,
-                endpoint: Some("https://sync.example.com".to_string())
+                endpoint: Some("https://sync.example.com".to_string()),
+                message: None
             }
         );
 

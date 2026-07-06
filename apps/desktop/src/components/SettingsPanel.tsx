@@ -390,9 +390,8 @@ function SyncProviderRow({
 
 function ServerSyncRow() {
   const { t } = useLocale();
+  const [available, setAvailable] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [endpoint, setEndpoint] = useState("");
-  const [token, setToken] = useState("");
   const [savedEndpoint, setSavedEndpoint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -401,13 +400,12 @@ function ServerSyncRow() {
     commands.serverSync
       .status()
       .then((status) => {
+        setAvailable(status.available);
         setConnected(status.connected);
         setSavedEndpoint(status.endpoint);
-        if (status.endpoint) {
-          setEndpoint(status.endpoint);
-        }
       })
       .catch(() => {
+        setAvailable(false);
         setConnected(false);
         setSavedEndpoint(null);
       });
@@ -421,12 +419,11 @@ function ServerSyncRow() {
     try {
       if (connected) {
         await commands.serverSync.disconnect();
-        setToken("");
       } else {
-        const status = await commands.serverSync.connect(endpoint, token);
+        const status = await commands.serverSync.connectDefault();
+        setAvailable(status.available);
         setConnected(status.connected);
         setSavedEndpoint(status.endpoint);
-        setToken("");
       }
       refresh();
     } catch {
@@ -445,33 +442,16 @@ function ServerSyncRow() {
         <span>{t("settings.syncServer")}</span>
         <span className="sync-provider-description">{t("settings.syncServerDesc")}</span>
         <span className="settings-hint">
-          {connected ? `${t("settings.syncConnected")}: ${savedEndpoint}` : t("settings.syncServerNotConfigured")}
+          {connected
+            ? `${t("settings.syncConnected")}: ${savedEndpoint}`
+            : available
+              ? t("settings.syncServerReady")
+              : t("settings.syncServerNotConfigured")}
         </span>
       </div>
-      <div className="server-sync-form">
-        <input
-          className="server-sync-input"
-          value={endpoint}
-          onChange={(event) => setEndpoint(event.target.value)}
-          placeholder={t("settings.syncServerEndpoint")}
-          disabled={busy || connected}
-          aria-label={t("settings.syncServerEndpoint")}
-        />
-        {!connected && (
-          <input
-            className="server-sync-input"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder={t("settings.syncServerToken")}
-            disabled={busy}
-            type="password"
-            aria-label={t("settings.syncServerToken")}
-          />
-        )}
-        <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
-          {busy ? t("settings.syncConnecting") : connected ? t("settings.syncDisconnect") : t("settings.syncConnect")}
-        </button>
-      </div>
+      <button className="preset-button" onClick={() => void handleClick()} disabled={busy || (!available && !connected)}>
+        {busy ? t("settings.syncConnecting") : connected ? t("settings.syncDisconnect") : t("settings.syncEnable")}
+      </button>
       {error && <p className="note-error">{t("settings.syncServerError")}</p>}
     </div>
   );

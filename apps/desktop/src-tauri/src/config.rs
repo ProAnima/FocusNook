@@ -21,7 +21,14 @@ pub struct ProviderCredentials {
 #[derive(Default)]
 pub struct SyncProvidersConfig {
     pub google: Option<ProviderCredentials>,
+    pub server: Option<ServerSyncBootstrap>,
     pub yandex: Option<ProviderCredentials>,
+}
+
+#[derive(Clone)]
+pub struct ServerSyncBootstrap {
+    pub endpoint: String,
+    pub user_token: String,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +37,22 @@ struct RawCredentials {
     client_id: String,
     #[serde(rename = "clientSecret")]
     client_secret: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawServerSyncBootstrap {
+    endpoint: String,
+    #[serde(rename = "userToken")]
+    user_token: String,
+}
+
+impl From<RawServerSyncBootstrap> for ServerSyncBootstrap {
+    fn from(raw: RawServerSyncBootstrap) -> Self {
+        ServerSyncBootstrap {
+            endpoint: raw.endpoint,
+            user_token: raw.user_token,
+        }
+    }
 }
 
 impl From<RawCredentials> for ProviderCredentials {
@@ -44,6 +67,7 @@ impl From<RawCredentials> for ProviderCredentials {
 #[derive(Deserialize, Default)]
 struct RawConfig {
     google: Option<RawCredentials>,
+    server: Option<RawServerSyncBootstrap>,
     yandex: Option<RawCredentials>,
 }
 
@@ -60,6 +84,7 @@ pub fn load(data_dir: &Path) -> SyncProvidersConfig {
     };
     SyncProvidersConfig {
         google: parsed.google.map(ProviderCredentials::from),
+        server: parsed.server.map(ServerSyncBootstrap::from),
         yandex: parsed.yandex.map(ProviderCredentials::from),
     }
 }
@@ -87,6 +112,7 @@ mod tests {
         let dir = temp_dir();
         let config = load(&dir);
         assert!(config.google.is_none());
+        assert!(config.server.is_none());
         assert!(config.yandex.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -110,6 +136,7 @@ mod tests {
         );
         let config = load(&dir);
         assert!(config.google.is_some());
+        assert!(config.server.is_none());
         assert!(config.yandex.is_none());
         assert_eq!(config.google.unwrap().client_id, "abc");
         fs::remove_dir_all(&dir).unwrap();
@@ -123,6 +150,20 @@ mod tests {
         let yandex = config.yandex.unwrap();
         assert_eq!(yandex.client_id, "xyz");
         assert_eq!(yandex.client_secret, None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_server_sync_bootstrap_without_committing_it() {
+        let dir = temp_dir();
+        write_config(
+            &dir,
+            r#"{"server": {"endpoint": "https://focus.proanima.net", "userToken": "fnk_user_secret"}}"#,
+        );
+        let config = load(&dir);
+        let server = config.server.unwrap();
+        assert_eq!(server.endpoint, "https://focus.proanima.net");
+        assert_eq!(server.user_token, "fnk_user_secret");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

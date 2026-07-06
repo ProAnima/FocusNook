@@ -25,9 +25,9 @@ pnpm-debug.log*
 # OS app-data каталоге, не в репо, но на случай локального тестирования рядом
 # с исходниками.
 sync_providers.json
+apps/server/backups/
 .idea/
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
-

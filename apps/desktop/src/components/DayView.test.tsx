@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
@@ -125,7 +125,9 @@ describe("DayView", () => {
 
   it("moves an unfinished item to the next day", async () => {
     list.mockResolvedValue([item()]);
-    moveToDate.mockResolvedValue(item({ planDate: "2026-07-07" }));
+    moveToDate.mockImplementation((_id: string, targetDate: string) =>
+      Promise.resolve(item({ planDate: targetDate })),
+    );
     const user = userEvent.setup();
     render(<DayView />);
 
@@ -133,18 +135,20 @@ describe("DayView", () => {
     await user.click(screen.getByTitle("Перенести на следующий день"));
 
     expect(moveToDate).toHaveBeenCalledWith("1", expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
-    expect(screen.queryByText("Задача")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Задача")).not.toBeInTheDocument());
   });
 
   it("opens the calendar and selects another day", async () => {
     const user = userEvent.setup();
-    render(<DayView />);
+    const { container } = render(<DayView />);
 
     await user.click(screen.getByTitle("Открыть календарь"));
     expect(listRange).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
-    await user.click(screen.getAllByRole("button", { name: "7" })[0]);
+    const nextDateButton = container.querySelector<HTMLButtonElement>(".calendar-day:not(.is-selected):not(.is-muted)");
+    expect(nextDateButton).toBeTruthy();
+    await user.click(nextDateButton as HTMLButtonElement);
 
-    expect(list).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
   });
 
   it("removes an item from the list when deleted", async () => {

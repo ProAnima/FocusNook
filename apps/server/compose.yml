@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - focusnook-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FOCUSNOOK_DATABASE_URL: ${FOCUSNOOK_DATABASE_URL}
+      FOCUSNOOK_BIND_ADDR: 0.0.0.0:8080
+      FOCUSNOOK_PUBLIC_BASE_URL: ${FOCUSNOOK_PUBLIC_BASE_URL}
+      FOCUSNOOK_ADMIN_TOKEN: ${FOCUSNOOK_ADMIN_TOKEN}
+      FOCUSNOOK_WEB_SECONDARY_PASSWORD: ${FOCUSNOOK_WEB_SECONDARY_PASSWORD}
+      FOCUSNOOK_TOKEN_PEPPER_B64: ${FOCUSNOOK_TOKEN_PEPPER_B64}
+      FOCUSNOOK_ENCRYPTION_KEY_B64: ${FOCUSNOOK_ENCRYPTION_KEY_B64}
+      FOCUSNOOK_MAX_OPS_PER_EXCHANGE: ${FOCUSNOOK_MAX_OPS_PER_EXCHANGE:-500}
+      FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES: ${FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES:-262144}
+      FOCUSNOOK_MAX_BLOB_BYTES: ${FOCUSNOOK_MAX_BLOB_BYTES:-15728640}
+      RUST_LOG: ${RUST_LOG:-focusnook_sync_server=info,tower_http=info}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/focusnook-sync-server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      FOCUSNOOK_BACKUP_INTERVAL_SECONDS: ${FOCUSNOOK_BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ${FOCUSNOOK_BACKUP_DIR:-./backups}:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          PGPASSWORD="$${POSTGRES_PASSWORD}" pg_dump -h postgres -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -Fc -f "/backups/focusnook-$${ts}.dump"
+          find /backups -type f -name "focusnook-*.dump" -mtime +14 -delete
+          sleep "$${FOCUSNOOK_BACKUP_INTERVAL_SECONDS}"
+        done
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      FOCUSNOOK_DOMAIN: ${FOCUSNOOK_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - focusnook-caddy-data:/data
+      - focusnook-caddy-config:/config
+
+volumes:
+  focusnook-caddy-config:
+  focusnook-caddy-data:
+  focusnook-postgres:

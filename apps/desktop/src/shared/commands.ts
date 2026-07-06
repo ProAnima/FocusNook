@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 
@@ -72,6 +72,11 @@ export interface ProfilesResponse {
   activeProfileId: string;
 }
 
+export interface CursorClientPosition {
+  x: number;
+  y: number;
+}
+
 // Раздел 14 ТЗ, sync — только аутентификация в этом шаге (см. oauth.rs).
 export type SyncProvider = "google_drive" | "yandex_disk"; export type NoteFolderSort = "recent" | "name"; export type FolderRailSide = "left" | "right";
 
@@ -80,8 +85,10 @@ export interface ConnectionStatus {
 }
 
 export interface ServerSyncStatus {
+  available: boolean;
   connected: boolean;
   endpoint: string | null;
+  message: string | null;
 }
 
 export interface SyncReadinessStatus {
@@ -148,6 +155,21 @@ export const commands = {
       } catch {
         return () => {};
       }
+    },
+    async getCursorClientPosition(): Promise<CursorClientPosition> {
+      const win = getCurrentWindow();
+      const [cursor, position, scaleFactor] = await Promise.all([
+        cursorPosition(),
+        win.outerPosition(),
+        win.scaleFactor(),
+      ]);
+      return {
+        x: (cursor.x - position.x) / scaleFactor,
+        y: (cursor.y - position.y) / scaleFactor,
+      };
+    },
+    async setIgnoreCursorEvents(ignore: boolean): Promise<void> {
+      await getCurrentWindow().setIgnoreCursorEvents(ignore);
     },
   },
   profiles: {
@@ -318,6 +340,9 @@ export const commands = {
   serverSync: {
     async status(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("server_sync_status");
+    },
+    async connectDefault(): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("connect_default_server_sync");
     },
     async connect(endpoint: string, token: string): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_server_sync", { endpoint, token });
