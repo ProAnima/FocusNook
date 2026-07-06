@@ -8,11 +8,14 @@ mod oauth;
 mod plan_items;
 mod profiles;
 mod reminders;
+mod server_sync;
 mod sync;
 mod sync_log;
 mod sync_tokens;
+mod window_state;
 
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,6 +33,7 @@ use tauri_plugin_reminder_alarm::{CancelRequest, ReminderAlarmExt, ScheduleReque
 const DEFAULT_SHORTCUT: &str = "ctrl+shift+v";
 const FALLBACK_SHORTCUT: &str = "ctrl+alt+space";
 const BOUNDS_SETTLE_MS: i64 = 150;
+const WINDOW_STATE_SETTLE_MS: i64 = 300;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -656,6 +660,28 @@ fn spawn_bounds_watcher(app: tauri::AppHandle, last_moved: Arc<AtomicI64>) {
     });
 }
 
+fn spawn_window_state_watcher(
+    app: tauri::AppHandle,
+    data_dir: PathBuf,
+    last_window_state_change: Arc<AtomicI64>,
+) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(WINDOW_STATE_SETTLE_MS as u64));
+        let last = last_window_state_change.load(Ordering::SeqCst);
+        if last == 0 || now_millis() - last < WINDOW_STATE_SETTLE_MS {
+            continue;
+        }
+        last_window_state_change.store(0, Ordering::SeqCst);
+        let app_for_main = app.clone();
+        let data_dir_for_main = data_dir.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Some(window) = app_for_main.get_webview_window("main") {
+                let _ = window_state::save(&window, &data_dir_for_main);
+            }
+        });
+    });
+}
+
 // Пробуем основной хоткей, при конфликте — запасной (раздел 10 ТЗ, риск конфликта с paste-without-formatting).
 #[cfg(desktop)]
 fn register_layer_shortcut(app: &tauri::AppHandle) -> Result<&'static str, String> {
@@ -729,6 +755,8 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn run() {
     let last_moved = Arc::new(AtomicI64::new(0));
     let last_moved_for_event = last_moved.clone();
+    let last_window_state_change = Arc::new(AtomicI64::new(0));
+    let last_window_state_change_for_event = last_window_state_change.clone();
 
     let mut builder = tauri::Builder::default();
 
@@ -776,6 +804,12 @@ pub fn run() {
         .on_window_event(move |window, event| match event {
             tauri::WindowEvent::Moved(_) => {
                 last_moved_for_event.store(now_millis(), Ordering::SeqCst);
+                if window.label() == "main" {
+                    last_window_state_change_for_event.store(now_millis(), Ordering::SeqCst);
+                }
+            }
+            tauri::WindowEvent::Resized(_) if window.label() == "main" => {
+                last_window_state_change_for_event.store(now_millis(), Ordering::SeqCst);
             }
             // Только главное окно прячется в tray при закрытии — иначе
             // alert-окно "закрывалось" бы, просто скрываясь, и блокировало
@@ -789,6 +823,10 @@ pub fn run() {
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            window_state::apply(app.handle(), &data_dir);
+            if let Some(window) = app.get_webview_window("main") {
+                clamp_to_monitor(&window);
+            }
 
             let profiles_state = profiles::init(&data_dir)?;
             let active_id = profiles::list(&profiles_state)?.active_profile_id;
@@ -813,6 +851,11 @@ pub fn run() {
             app.manage(config::load(&data_dir));
 
             spawn_bounds_watcher(app.handle().clone(), last_moved.clone());
+            spawn_window_state_watcher(
+                app.handle().clone(),
+                data_dir.clone(),
+                last_window_state_change.clone(),
+            );
 
             #[cfg(desktop)]
             {
@@ -865,7 +908,10 @@ pub fn run() {
             delete_reminder,
             sync::start_provider_auth,
             sync::connection_status,
-            sync::disconnect_provider
+            sync::disconnect_provider,
+            server_sync::server_sync_status,
+            server_sync::connect_server_sync,
+            server_sync::disconnect_server_sync
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

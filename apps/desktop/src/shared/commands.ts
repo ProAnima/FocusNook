@@ -78,6 +78,11 @@ export interface ConnectionStatus {
   connected: boolean;
 }
 
+export interface ServerSyncStatus {
+  connected: boolean;
+  endpoint: string | null;
+}
+
 let storePromise: Promise<Store> | null = null;
 
 function settingsStore() {
@@ -252,6 +257,17 @@ export const commands = {
     },
     async disconnect(provider: SyncProvider) {
       await invoke("disconnect_provider", { provider });
+    },
+  },
+  serverSync: {
+    async status(): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("server_sync_status");
+    },
+    async connect(endpoint: string, token: string): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("connect_server_sync", { endpoint, token });
+    },
+    async disconnect() {
+      await invoke("disconnect_server_sync");
     },
   },
 };

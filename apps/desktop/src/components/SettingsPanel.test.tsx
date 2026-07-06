@@ -16,6 +16,9 @@ const {
   syncStatus,
   syncStart,
   syncDisconnect,
+  serverSyncStatus,
+  serverSyncConnect,
+  serverSyncDisconnect,
 } = vi.hoisted(() => ({
   getAutostart: vi.fn().mockResolvedValue(false),
   setAutostart: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +31,9 @@ const {
   syncStatus: vi.fn().mockResolvedValue({ connected: false }),
   syncStart: vi.fn().mockResolvedValue(undefined),
   syncDisconnect: vi.fn().mockResolvedValue(undefined),
+  serverSyncStatus: vi.fn().mockResolvedValue({ connected: false, endpoint: null }),
+  serverSyncConnect: vi.fn().mockResolvedValue({ connected: true, endpoint: "https://sync.example.com" }),
+  serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../shared/commands", () => ({
@@ -35,6 +41,7 @@ vi.mock("../shared/commands", () => ({
     settings: { getAutostart, setAutostart, getLocale, setLocale, getMicrophoneDeviceId, setMicrophoneDeviceId },
     diagnostics: { export: exportDiagnostics },
     sync: { status: syncStatus, start: syncStart, disconnect: syncDisconnect },
+    serverSync: { status: serverSyncStatus, connect: serverSyncConnect, disconnect: serverSyncDisconnect },
   },
 }));
 
@@ -177,5 +184,20 @@ describe("SettingsPanel", () => {
     await user.click(disconnectButton);
 
     expect(syncDisconnect).toHaveBeenCalledWith("yandex_disk");
+  });
+
+  it("saves the custom server sync connection", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.type(screen.getByLabelText("https://sync.example.com"), "https://sync.focusnook.test");
+    await user.type(screen.getByLabelText("Токен доступа"), "server-token");
+    const serverCard = screen.getByText("ProAnima VDS").closest(".sync-provider-row");
+    const connectButton = serverCard?.querySelector("button");
+
+    expect(connectButton).toBeTruthy();
+    await user.click(connectButton as HTMLButtonElement);
+
+    expect(serverSyncConnect).toHaveBeenCalledWith("https://sync.focusnook.test", "server-token");
   });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Mic, RefreshCw, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
 import { commands, type Locale, type SyncProvider } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
@@ -249,7 +250,17 @@ function useConnectionStatus(provider: SyncProvider) {
 // делает различий между "провайдер не настроен в sync_providers.json" и
 // "OAuth реально не прошёл" — оба случая ведут на один и тот же settings.syncError,
 // осознанно минимальный UI для этого шага (только доказать, что флоу работает).
-function SyncProviderRow({ provider, label }: { provider: SyncProvider; label: string }) {
+function SyncProviderRow({
+  provider,
+  label,
+  description,
+  icon,
+}: {
+  provider: SyncProvider;
+  label: string;
+  description: string;
+  icon: ReactNode;
+}) {
   const { t } = useLocale();
   const { connected, refresh } = useConnectionStatus(provider);
   const [busy, setBusy] = useState(false);
@@ -273,9 +284,11 @@ function SyncProviderRow({ provider, label }: { provider: SyncProvider; label: s
   }
 
   return (
-    <div className="sync-provider-row">
+    <div className={`sync-provider-row ${connected ? "is-connected" : ""}`}>
+      <div className="sync-provider-icon">{icon}</div>
       <div className="sync-provider-info">
         <span>{label}</span>
+        <span className="sync-provider-description">{description}</span>
         <span className="settings-hint">
           {connected ? t("settings.syncConnected") : t("settings.syncNotConnected")}
         </span>
@@ -288,13 +301,124 @@ function SyncProviderRow({ provider, label }: { provider: SyncProvider; label: s
   );
 }
 
+function ServerSyncRow() {
+  const { t } = useLocale();
+  const [connected, setConnected] = useState(false);
+  const [endpoint, setEndpoint] = useState("");
+  const [token, setToken] = useState("");
+  const [savedEndpoint, setSavedEndpoint] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+
+  const refresh = useCallback(() => {
+    commands.serverSync
+      .status()
+      .then((status) => {
+        setConnected(status.connected);
+        setSavedEndpoint(status.endpoint);
+        if (status.endpoint) {
+          setEndpoint(status.endpoint);
+        }
+      })
+      .catch(() => {
+        setConnected(false);
+        setSavedEndpoint(null);
+      });
+  }, []);
+
+  useEffect(() => refresh(), [refresh]);
+
+  async function handleClick() {
+    setError(false);
+    setBusy(true);
+    try {
+      if (connected) {
+        await commands.serverSync.disconnect();
+        setToken("");
+      } else {
+        const status = await commands.serverSync.connect(endpoint, token);
+        setConnected(status.connected);
+        setSavedEndpoint(status.endpoint);
+        setToken("");
+      }
+      refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`sync-provider-row sync-provider-server ${connected ? "is-connected" : ""}`}>
+      <div className="sync-provider-icon">
+        <Server size={15} />
+      </div>
+      <div className="sync-provider-info">
+        <span>{t("settings.syncServer")}</span>
+        <span className="sync-provider-description">{t("settings.syncServerDesc")}</span>
+        <span className="settings-hint">
+          {connected ? `${t("settings.syncConnected")}: ${savedEndpoint}` : t("settings.syncServerNotConfigured")}
+        </span>
+      </div>
+      <div className="server-sync-form">
+        <input
+          className="server-sync-input"
+          value={endpoint}
+          onChange={(event) => setEndpoint(event.target.value)}
+          placeholder={t("settings.syncServerEndpoint")}
+          disabled={busy || connected}
+          aria-label={t("settings.syncServerEndpoint")}
+        />
+        {!connected && (
+          <input
+            className="server-sync-input"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder={t("settings.syncServerToken")}
+            disabled={busy}
+            type="password"
+            aria-label={t("settings.syncServerToken")}
+          />
+        )}
+        <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
+          {busy ? t("settings.syncConnecting") : connected ? t("settings.syncDisconnect") : t("settings.syncConnect")}
+        </button>
+      </div>
+      {error && <p className="note-error">{t("settings.syncServerError")}</p>}
+    </div>
+  );
+}
+
 function SyncSection() {
   const { t } = useLocale();
   return (
     <div className="settings-group">
       <span className="settings-group-label">{t("settings.sync")}</span>
-      <SyncProviderRow provider="google_drive" label={t("settings.syncGoogleDrive")} />
-      <SyncProviderRow provider="yandex_disk" label={t("settings.syncYandexDisk")} />
+      <div className="account-sync-summary">
+        <ShieldCheck size={15} />
+        <div>
+          <span>{t("settings.accountSyncTitle")}</span>
+          <p>{t("settings.accountSyncHint")}</p>
+        </div>
+      </div>
+      <SyncProviderRow
+        provider="google_drive"
+        label={t("settings.syncGoogleDrive")}
+        description={t("settings.syncGoogleDriveDesc")}
+        icon={<Cloud size={15} />}
+      />
+      <SyncProviderRow
+        provider="yandex_disk"
+        label={t("settings.syncYandexDisk")}
+        description={t("settings.syncYandexDiskDesc")}
+        icon={<Database size={15} />}
+      />
+      <ServerSyncRow />
+      <p className="settings-secure-note">
+        <KeyRound size={12} />
+        <span>{t("settings.syncSecureNote")}</span>
+      </p>
     </div>
   );
 }
