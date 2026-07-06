@@ -137,6 +137,7 @@ pub const ADMIN_HTML: &str = r#"<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FocusNook Sync Console</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23141b32'/%3E%3Crect x='14' y='15' width='36' height='34' rx='8' fill='none' stroke='%2367f5df' stroke-width='4'/%3E%3Cpath d='M22 25h20M22 34h12' stroke='%238b7dff' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='44' cy='43' r='8' fill='%23ffbd63'/%3E%3C/svg%3E">
   <style>
     :root{color-scheme:dark;--bg:#0e1324;--panel:rgba(20,27,50,.84);--panel2:rgba(34,43,78,.68);--text:#eef3ff;--muted:#9eabc9;--line:rgba(255,255,255,.11);--accent:#67f5df;--warn:#ffc66d;--bad:#ff7b91;--good:#69e798;--shadow:0 24px 80px rgba(0,0,0,.34)}
     [data-theme=light]{color-scheme:light;--bg:#edf2f7;--panel:rgba(255,255,255,.88);--panel2:rgba(240,245,250,.86);--text:#162035;--muted:#61708c;--line:rgba(32,46,78,.13);--accent:#0f9d8f;--warn:#a86703;--bad:#c63251;--good:#158a4c;--shadow:0 24px 70px rgba(64,84,118,.17)}

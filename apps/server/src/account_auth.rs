@@ -11,7 +11,7 @@ const REGISTER_WINDOW: Duration = Duration::from_secs(60 * 60);
 const LOCKOUT: Duration = Duration::from_secs(60 * 15);
 const MAX_ATTEMPTS: u32 = 8;
 const MAX_REGISTRATIONS: u32 = 6;
-const MIN_PASSWORD_LEN: usize = 10;
+const MIN_PASSWORD_LEN: usize = 7;
 const MAX_PASSWORD_LEN: usize = 256;
 
 #[derive(Default)]
@@ -147,15 +147,8 @@ pub fn validate_password(password: &str) -> AppResult<()> {
     let len = password.chars().count();
     if !(MIN_PASSWORD_LEN..=MAX_PASSWORD_LEN).contains(&len) {
         return Err(AppError::BadRequest(format!(
-            "password must be {MIN_PASSWORD_LEN}-{MAX_PASSWORD_LEN} characters"
+            "password must be longer than 6 characters and no more than {MAX_PASSWORD_LEN} characters"
         )));
-    }
-    let has_letter = password.chars().any(char::is_alphabetic);
-    let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    if !has_letter || !has_digit {
-        return Err(AppError::BadRequest(
-            "password must contain letters and digits".to_string(),
-        ));
     }
     Ok(())
 }
@@ -197,10 +190,17 @@ mod tests {
 
     #[test]
     fn password_round_trips() -> AppResult<()> {
-        let hash = hash_password("StrongPass123")?;
-        assert!(verify_password("StrongPass123", &hash)?);
+        let hash = hash_password("letters-only")?;
+        assert!(verify_password("letters-only", &hash)?);
         assert!(!verify_password("wrongStrong123", &hash)?);
         Ok(())
+    }
+
+    #[test]
+    fn password_only_needs_to_be_longer_than_six_chars() {
+        assert!(validate_password("abcdef").is_err());
+        assert!(validate_password("abcdefg").is_ok());
+        assert!(validate_password("парольчик").is_ok());
     }
 
     #[test]

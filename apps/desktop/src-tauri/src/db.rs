@@ -1,5 +1,7 @@
 use rusqlite::Connection;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(not(target_os = "android"), test))]
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 // Раздел 9 ТЗ: локальная база на профиль. Пока нет multi-account — один файл
@@ -205,6 +207,8 @@ fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String>
 // bundled-sqlcipher-vendored-openssl с Windows-хоста под Android не собирается
 // из-за требований Perl в OpenSSL Configure — открытый риск раздела 26.
 pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
+    #[cfg(target_os = "android")]
+    let _ = keyring_user;
     #[cfg(not(target_os = "android"))]
     let key = vault_key(keyring_user)?;
     #[cfg(not(target_os = "android"))]

@@ -143,6 +143,7 @@ pub fn create_audio(
 // datetime(...) в SQLite нормализует и ISO-с-T-и-Z, и свой формат 'now' к
 // одному виду перед сравнением — не нужен отдельный date/time crate в Rust
 // только ради проверки "наступило ли время".
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn due(conn: &Connection) -> rusqlite::Result<Vec<ReminderDto>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, audio_path, trigger_at_utc, status FROM reminders
@@ -158,6 +159,7 @@ pub fn due(conn: &Connection) -> rusqlite::Result<Vec<ReminderDto>> {
 // значило бы шуметь в журнале и создавать гонку с правилом "более поздний
 // user action побеждает scheduled state" (раздел 14), которое пока не с чем
 // разрешать (нет второго устройства/лога).
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn mark_firing(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE reminders SET status = 'firing' WHERE id = ?1",

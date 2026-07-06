@@ -2246,6 +2246,16 @@ textarea {
   color: var(--text-tertiary);
 }
 
+.server-password-hint {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  padding: 0 2px;
+}
+
+.server-password-hint.is-error {
+  color: var(--danger);
+}
+
 .server-sync-input:focus {
   outline: none;
   border-color: var(--accent-soft-border);

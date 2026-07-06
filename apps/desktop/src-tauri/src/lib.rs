@@ -33,7 +33,9 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_reminder_alarm::{CancelRequest, ReminderAlarmExt, ScheduleRequest};
 
+#[cfg(desktop)]
 const DEFAULT_SHORTCUT: &str = "ctrl+shift+v";
+#[cfg(desktop)]
 const FALLBACK_SHORTCUT: &str = "ctrl+alt+space";
 const BOUNDS_SETTLE_MS: i64 = 150;
 const WINDOW_STATE_SETTLE_MS: i64 = 300;
@@ -670,6 +672,7 @@ fn delete_reminder(
     Ok(())
 }
 
+#[cfg(desktop)]
 fn toggle_window_visibility(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
@@ -828,6 +831,7 @@ pub fn run() {
     let last_window_state_change = Arc::new(AtomicI64::new(0));
     let last_window_state_change_for_event = last_window_state_change.clone();
 
+    #[cfg_attr(mobile, allow(unused_mut))]
     let mut builder = tauri::Builder::default();
 
     // Без иконки в таскбаре (skipTaskbar: true) пользователь легко забывает,

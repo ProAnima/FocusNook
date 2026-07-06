@@ -1,13 +1,16 @@
-use crate::{db, reminders};
+#[cfg(desktop)]
+use crate::db;
+use crate::reminders;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub const ALERT_WINDOW_LABEL: &str = "reminder-alert";
+#[cfg(desktop)]
 const POLL_INTERVAL_SECS: u64 = 20;
 
 // Раздел 10 ТЗ: отдельное topmost-окно на напоминание, не главное окно.
@@ -49,7 +52,7 @@ pub fn seconds_since_last_poll(state: &AlertState) -> Option<i64> {
 #[cfg(desktop)]
 pub fn spawn_scheduler(app: tauri::AppHandle) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+        std::thread::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS));
         check_due_reminders(&app);
     });
 }

@@ -10,6 +10,8 @@ import type { ShortcutInfo } from "../shared/useLayerToggle";
 import { useOutsideClick } from "../shared/useOutsideClick";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
 
+const MIN_SERVER_PASSWORD_LENGTH = 7;
+
 function AppearanceSection({
   mode,
   setMode,
@@ -401,6 +403,9 @@ function ServerSyncRow() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const passwordLength = Array.from(password).length;
+  const registerPasswordInvalid = mode === "register" && passwordLength < MIN_SERVER_PASSWORD_LENGTH;
+  const registerPasswordTooShort = mode === "register" && passwordLength > 0 && registerPasswordInvalid;
 
   const refresh = useCallback(() => {
     commands.serverSync
@@ -425,6 +430,9 @@ function ServerSyncRow() {
 
   async function handleClick() {
     setError(false);
+    if (!connected && registerPasswordInvalid) {
+      return;
+    }
     setBusy(true);
     try {
       if (connected) {
@@ -520,10 +528,15 @@ function ServerSyncRow() {
           autoComplete={mode === "register" ? "new-password" : "current-password"}
           type="password"
         />
+        {mode === "register" && (
+          <p className={`settings-hint server-password-hint ${registerPasswordTooShort ? "is-error" : ""}`}>
+            {t("settings.syncServerPasswordHint")}
+          </p>
+        )}
         <button
           className="preset-button"
           onClick={() => void handleClick()}
-          disabled={busy || !available || !email.trim() || !password}
+          disabled={busy || !available || !email.trim() || !password || registerPasswordInvalid}
         >
           {busy ? t("settings.syncConnecting") : mode === "register" ? t("settings.syncServerCreate") : t("settings.syncServerSignIn")}
         </button>
