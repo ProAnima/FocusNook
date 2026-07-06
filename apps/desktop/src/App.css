@@ -1686,6 +1686,60 @@ textarea {
   color: var(--text-tertiary);
 }
 
+.sync-readiness-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--divider);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.sync-readiness-title {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 24px;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sync-readiness-title svg {
+  color: var(--accent);
+}
+
+.sync-readiness-title .icon-button {
+  width: 24px;
+  height: 24px;
+}
+
+.sync-readiness-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: 5px 10px;
+  align-items: center;
+  font-size: 10.5px;
+}
+
+.sync-readiness-grid span {
+  min-width: 0;
+  color: var(--text-tertiary);
+}
+
+.sync-readiness-grid strong {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .sync-provider-row {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;

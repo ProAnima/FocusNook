@@ -83,6 +83,14 @@ export interface ServerSyncStatus {
   endpoint: string | null;
 }
 
+export interface SyncReadinessStatus {
+  profileIdHash: string;
+  deviceIdHash: string | null;
+  operationCount: number;
+  lastOperationAt: string | null;
+  lastOperationHlc: string | null;
+}
+
 let storePromise: Promise<Store> | null = null;
 
 function settingsStore() {
@@ -251,6 +259,9 @@ export const commands = {
   sync: {
     async start(provider: SyncProvider) {
       await invoke("start_provider_auth", { provider });
+    },
+    async readiness(): Promise<SyncReadinessStatus> {
+      return invoke<SyncReadinessStatus>("sync_readiness_status");
     },
     async status(provider: SyncProvider): Promise<ConnectionStatus> {
       return invoke<ConnectionStatus>("connection_status", { provider });

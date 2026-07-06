@@ -13,6 +13,7 @@ const {
   getMicrophoneDeviceId,
   setMicrophoneDeviceId,
   exportDiagnostics,
+  syncReadiness,
   syncStatus,
   syncStart,
   syncDisconnect,
@@ -28,6 +29,13 @@ const {
   getMicrophoneDeviceId: vi.fn().mockResolvedValue(null),
   setMicrophoneDeviceId: vi.fn().mockResolvedValue(undefined),
   exportDiagnostics: vi.fn(),
+  syncReadiness: vi.fn().mockResolvedValue({
+    profileIdHash: "profilehash",
+    deviceIdHash: "devicehash",
+    operationCount: 7,
+    lastOperationAt: "2026-07-06 12:30:00",
+    lastOperationHlc: "2026-07-06T12:30:00.000Z-0000-device",
+  }),
   syncStatus: vi.fn().mockResolvedValue({ connected: false }),
   syncStart: vi.fn().mockResolvedValue(undefined),
   syncDisconnect: vi.fn().mockResolvedValue(undefined),
@@ -40,7 +48,7 @@ vi.mock("../shared/commands", () => ({
   commands: {
     settings: { getAutostart, setAutostart, getLocale, setLocale, getMicrophoneDeviceId, setMicrophoneDeviceId },
     diagnostics: { export: exportDiagnostics },
-    sync: { status: syncStatus, start: syncStart, disconnect: syncDisconnect },
+    sync: { readiness: syncReadiness, status: syncStatus, start: syncStart, disconnect: syncDisconnect },
     serverSync: { status: serverSyncStatus, connect: serverSyncConnect, disconnect: serverSyncDisconnect },
   },
 }));
@@ -149,6 +157,14 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
     expect(await screen.findAllByText("Не подключено")).toHaveLength(2);
+  });
+
+  it("shows the local sync operation journal status", async () => {
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    expect(await screen.findByText("7")).toBeInTheDocument();
+    expect(await screen.findByText("devicehash")).toBeInTheDocument();
+    expect(await screen.findByText("2026-07-06 12:30:00")).toBeInTheDocument();
   });
 
   it("starts the auth flow when Connect is clicked for a disconnected provider", async () => {

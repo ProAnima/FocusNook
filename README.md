@@ -40,6 +40,7 @@ Current implemented / in-progress focus:
 - Android alarm / notification plugin spike with boot rescheduling.
 - OAuth foundation for Google Drive and Yandex Disk sync authentication.
 - Secure per-profile credential foundation for the optional VDS sync server.
+- Local sync readiness status for the active profile operation log.
 
 ## Why FocusNook
 

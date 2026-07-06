@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, X } from "lucide-react";
+import { Activity, Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
 import { commands, type Locale, type SyncProvider } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
@@ -245,6 +245,57 @@ function useConnectionStatus(provider: SyncProvider) {
   return { connected, refresh };
 }
 
+function useSyncReadiness() {
+  const [status, setStatus] = useState<Awaited<ReturnType<typeof commands.sync.readiness>> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const refresh = useCallback(() => {
+    commands.sync
+      .readiness()
+      .then((nextStatus) => {
+        setStatus(nextStatus);
+        setFailed(false);
+      })
+      .catch(() => {
+        setStatus(null);
+        setFailed(true);
+      });
+  }, []);
+  useEffect(() => refresh(), [refresh]);
+  return { status, failed, refresh };
+}
+
+function SyncReadinessCard() {
+  const { t } = useLocale();
+  const { status, failed, refresh } = useSyncReadiness();
+
+  return (
+    <div className="sync-readiness-card">
+      <div className="sync-readiness-title">
+        <Activity size={14} />
+        <span>{t("settings.syncReadiness")}</span>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => refresh()}
+          title={t("settings.syncReadinessRefresh")}
+          aria-label={t("settings.syncReadinessRefresh")}
+        >
+          <RefreshCw size={12} />
+        </button>
+      </div>
+      <div className="sync-readiness-grid">
+        <span>{t("settings.syncReadinessOperations")}</span>
+        <strong>{status ? status.operationCount : "..."}</strong>
+        <span>{t("settings.syncReadinessDevice")}</span>
+        <strong>{status?.deviceIdHash ?? t("settings.syncReadinessNoDevice")}</strong>
+        <span>{t("settings.syncReadinessLast")}</span>
+        <strong>{status?.lastOperationAt ?? t("settings.syncReadinessNoOps")}</strong>
+      </div>
+      {failed && <p className="note-error">{t("settings.syncReadinessError")}</p>}
+    </div>
+  );
+}
+
 // "Подключено" здесь значит "есть сохранённый refresh-токен" (см.
 // sync.rs::connection_status) — не подтверждённая живая проверка. Кнопка не
 // делает различий между "провайдер не настроен в sync_providers.json" и
@@ -402,6 +453,7 @@ function SyncSection() {
           <p>{t("settings.accountSyncHint")}</p>
         </div>
       </div>
+      <SyncReadinessCard />
       <SyncProviderRow
         provider="google_drive"
         label={t("settings.syncGoogleDrive")}

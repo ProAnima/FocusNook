@@ -11,6 +11,7 @@ mod reminders;
 mod server_sync;
 mod sync;
 mod sync_log;
+mod sync_status;
 mod sync_tokens;
 mod window_state;
 
@@ -19,6 +20,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(desktop)]
+use tauri::image::Image;
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
@@ -473,6 +476,16 @@ fn export_diagnostics(
 }
 
 #[tauri::command]
+fn sync_readiness_status(
+    db: tauri::State<db::Db>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+) -> Result<sync_status::SyncReadinessStatus, String> {
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    sync_status::build(&conn, &profile_id)
+}
+
+#[tauri::command]
 fn list_reminders(db: tauri::State<db::Db>) -> Result<Vec<reminders::ReminderDto>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     reminders::list(&conn).map_err(|e| e.to_string())
@@ -715,10 +728,7 @@ fn store_shortcut_status(app: &tauri::AppHandle, active: &str) {
 // пункт трея "Выход".
 #[cfg(desktop)]
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let Some(icon) = app.default_window_icon().cloned() else {
-        eprintln!("Нет иконки приложения для трея — трей не создан");
-        return Ok(());
-    };
+    let icon = Image::new(include_bytes!("../icons/tray-icon.rgba"), 64, 64);
 
     let show_hide = MenuItem::with_id(app, "show_hide", "Показать/скрыть", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
@@ -900,6 +910,7 @@ pub fn run() {
             get_note_audio,
             delete_note,
             export_diagnostics,
+            sync_readiness_status,
             list_reminders,
             create_reminder,
             get_current_alert,
