@@ -3,14 +3,19 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
-const { list, create, toggleDone } = vi.hoisted(() => ({
+const { list, create, toggleDone, cycleProgress, toggleDeferred, deletePlanItem } = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   toggleDone: vi.fn(),
+  cycleProgress: vi.fn(),
+  toggleDeferred: vi.fn(),
+  deletePlanItem: vi.fn(),
 }));
 
 vi.mock("../shared/commands", () => ({
-  commands: { planItems: { list, create, toggleDone } },
+  commands: {
+    planItems: { list, create, toggleDone, cycleProgress, toggleDeferred, delete: deletePlanItem },
+  },
 }));
 
 beforeEach(() => {
@@ -78,5 +83,58 @@ describe("DayView", () => {
 
     expect(toggleDone).toHaveBeenCalledWith("1");
     expect(await screen.findByText("1/1")).toBeInTheDocument();
+  });
+
+  it("steps progress forward when the partial button is clicked", async () => {
+    list.mockResolvedValue([
+      { id: "1", title: "Задача", status: "open", progressPercent: null },
+    ]);
+    cycleProgress.mockResolvedValue({
+      id: "1",
+      title: "Задача",
+      status: "partial",
+      progressPercent: 25,
+    });
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByTitle("Частично выполнено"));
+
+    expect(cycleProgress).toHaveBeenCalledWith("1");
+    expect(await screen.findByText("25%")).toBeInTheDocument();
+  });
+
+  it("defers an item and can bring it back", async () => {
+    list.mockResolvedValue([
+      { id: "1", title: "Задача", status: "open", progressPercent: null },
+    ]);
+    toggleDeferred.mockResolvedValue({
+      id: "1",
+      title: "Задача",
+      status: "deferred",
+      progressPercent: null,
+    });
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByTitle("Отложить"));
+
+    expect(toggleDeferred).toHaveBeenCalledWith("1");
+    expect(await screen.findByTitle("Вернуть в работу")).toBeInTheDocument();
+  });
+
+  it("removes an item from the list when deleted", async () => {
+    list.mockResolvedValue([
+      { id: "1", title: "Задача", status: "open", progressPercent: null },
+    ]);
+    deletePlanItem.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await screen.findByText("Задача");
+    await user.click(screen.getByTitle("Удалить"));
+
+    expect(deletePlanItem).toHaveBeenCalledWith("1");
+    expect(screen.queryByText("Задача")).not.toBeInTheDocument();
   });
 });

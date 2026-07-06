@@ -21,6 +21,10 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+# OAuth client_id/secret для sync-провайдеров (раздел 14 ТЗ) — обычно живёт в
+# OS app-data каталоге, не в репо, но на случай локального тестирования рядом
+# с исходниками.
+sync_providers.json
 .idea/
 .vscode/*
 !.vscode/extensions.json

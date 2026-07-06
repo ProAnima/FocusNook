@@ -19,22 +19,26 @@
 
 ## Status
 
-FocusNook is in **Iteration 0: prototype spike**.
+FocusNook is in an early **local-first MVP** stage.
 
 The repository is public so the product direction, technical decisions, and
 implementation quality can be reviewed early. The code is not open source and
 is not licensed for commercial use, redistribution, or independent forks.
 
-Current focus:
+Current implemented / in-progress focus:
 
 - Windows desktop overlay shell with Tauri 2.
 - Transparent frameless window with custom controls.
 - Always-on-top / send-back layer switching.
 - Global shortcut with fallback.
 - Autostart and tray behavior.
-- Local SQLite spike.
-- Minimal React UI for Today, Notes, and Reminders.
-- Android alarm / notification spike planned next.
+- Per-profile local SQLite vaults on desktop.
+- SQLCipher encryption on desktop with plaintext-vault migration support.
+- Today, Notes, Reminders, Settings, profile switching, and diagnostics UI.
+- Audio note capture with encrypted desktop audio blobs.
+- Reminder alert window with snooze and acknowledge actions.
+- Android alarm / notification plugin spike with boot rescheduling.
+- OAuth foundation for Google Drive and Yandex Disk sync authentication.
 
 ## Why FocusNook
 
@@ -80,6 +84,7 @@ The Android app is planned as a full companion application:
 - microphone permission only on explicit voice actions;
 - voice-to-text capture;
 - audio notes;
+- boot-time alarm rescheduling for the active profile;
 - background sync through platform-safe scheduling;
 - shared domain model with the desktop app.
 
@@ -231,6 +236,7 @@ FocusNook is designed around a few non-negotiables:
 
 - local-first data ownership;
 - encrypted profile vaults before production sync;
+- encrypted desktop audio note blobs;
 - OAuth tokens stored in OS-backed secure storage;
 - no raw task/note/reminder content in crash logs;
 - no silent telemetry upload;
@@ -299,4 +305,3 @@ FocusNook is distributed under the
 You may view and privately evaluate the code. You may not use it commercially,
 redistribute it, publish independent forks, or create derivative products
 without prior written permission from ProAnima Studio.
-

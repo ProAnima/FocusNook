@@ -19,12 +19,24 @@ body {
   font-size: 13px;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  /* Виджет ведёт себя как нативное окно, не веб-страница: без этого клик-протяг
+     по любой карточке (заметка, задача, напоминание) уходит в text-selection
+     вместо обычного клика. Поля ввода ниже явно возвращают выделение обратно. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Окно остаётся transparent на уровне Tauri только ради чистых скруглённых
    углов (без этого показался бы квадратный "огрызок" по краям карточки).
    Сама карточка ниже — полностью непрозрачная поверхность. */
 .overlay-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -36,11 +48,80 @@ body {
   overflow: hidden;
 }
 
+/* "Живой" фон: два размытых пятна, которые медленно дрейфуют и чуть смещаются
+   за курсором (--pointer-x/--pointer-y, см. useLiveBackgroundPointer.ts).
+   На system/light/dark --bg-blob-* не определены — var(..., transparent)
+   делает пятна невидимыми, так что это правило ничего не меняет визуально
+   для обычных тем и не требует отдельного gate по data-theme. z-index:0 +
+   position:relative на .drag-zone/.tabs/.body (ниже) держат реальный контент
+   выше этого слоя однозначно, не полагаясь на порядок flex-стекинга. */
+.overlay-shell::before,
+.overlay-shell::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: 0.4;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.overlay-shell::before {
+  top: -22%;
+  left: -16%;
+  width: 55%;
+  aspect-ratio: 1;
+  background: var(--bg-blob-a, transparent);
+  translate: calc(var(--pointer-x, 0) * 14px) calc(var(--pointer-y, 0) * 14px);
+  animation: live-bg-drift-a 22s ease-in-out infinite;
+}
+
+.overlay-shell::after {
+  bottom: -24%;
+  right: -18%;
+  width: 62%;
+  aspect-ratio: 1;
+  background: var(--bg-blob-b, transparent);
+  translate: calc(var(--pointer-x, 0) * -10px) calc(var(--pointer-y, 0) * -10px);
+  animation: live-bg-drift-b 27s ease-in-out infinite;
+}
+
+@keyframes live-bg-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6%, 8%) scale(1.1);
+  }
+}
+
+@keyframes live-bg-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-5%, -7%) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-shell::before,
+  .overlay-shell::after {
+    animation: none;
+    translate: none;
+  }
+}
+
 /* data-tauri-drag-region на самом header — вся полоса тянет окно, не только
    надпись (Tauri сам исключает клики по кнопкам внутри). Без user-select:none
    браузер трактует область как выделяемый текст: курсор становится I-beam,
    drag-жест уходит в text-selection вместо нативного перетаскивания окна. */
 .drag-zone {
+  position: relative;
+  z-index: 1;
   height: 34px;
   min-height: 34px;
   display: flex;
@@ -51,6 +132,12 @@ body {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .brand {
@@ -64,6 +151,94 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* --- Переключатель профиля (раздел 15 ТЗ) --- */
+
+.profile-switcher {
+  position: relative;
+}
+
+.profile-avatar {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-gradient);
+  box-shadow: var(--shadow-soft);
+  /* Меню — не часть drag-зоны и не должно наследовать её user-select:none
+     ради текстового поля создания профиля внутри (см. .quick-add input). */
+  cursor: default;
+}
+
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-menu-item:hover {
+  background: var(--control-bg-hover);
+}
+
+.profile-menu-item.is-active {
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.profile-menu-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.profile-menu-new {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.profile-menu-new input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
 }
 
 .icon-button {
@@ -93,6 +268,8 @@ body {
 }
 
 .tabs {
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: 4px;
   padding: 10px 14px 0;
@@ -122,6 +299,8 @@ body {
 }
 
 .body {
+  position: relative;
+  z-index: 1;
   flex: 1;
   padding: 14px;
   display: flex;
@@ -226,11 +405,27 @@ body {
   background: var(--warning-soft-bg);
   padding: 2px 6px;
   border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 
-.plan-status-icon {
+/* Раздел 12 ТЗ: "контекстное меню: редактировать, отложить, удалить" —
+   реализовано как иконки-действия, а не выпадающее меню (проще и меньше
+   кода при том же результате), скрыты до наведения/фокуса, чтобы не
+   захламлять список в состоянии покоя. */
+.plan-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex: none;
-  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.plan-item:hover .plan-item-actions,
+.plan-item:focus-within .plan-item-actions {
+  opacity: 1;
 }
 
 .quick-add {
@@ -272,6 +467,9 @@ body {
 }
 
 .note-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--control-bg);
@@ -282,9 +480,45 @@ body {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  flex: 1;
   font-size: 13px;
   color: var(--text-primary);
   white-space: pre-wrap;
+}
+
+.note-item-actions {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.note-item:hover .note-item-actions,
+.note-item:focus-within .note-item-actions {
+  opacity: 1;
+}
+
+.note-audio {
+  flex: 1;
+  height: 30px;
+  min-width: 0;
+}
+
+.record-button.is-recording {
+  background: var(--danger-soft-bg);
+  color: var(--danger);
+  animation: record-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.note-error {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--danger);
 }
 
 /* --- Напоминания --- */
@@ -329,6 +563,17 @@ body {
   border-radius: 999px;
 }
 
+.reminder-item-actions {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.reminder-item:hover .reminder-item-actions,
+.reminder-item:focus-within .reminder-item-actions {
+  opacity: 1;
+}
+
 .reminder-composer {
   display: flex;
   flex-direction: column;
@@ -360,6 +605,29 @@ body {
 .preset-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.reminder-custom-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reminder-custom-time input[type="datetime-local"] {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.reminder-custom-time .preset-button {
+  flex: none;
+  padding: 6px 10px;
 }
 
 /* --- Пустые состояния --- */
@@ -438,6 +706,45 @@ body {
   color: var(--accent);
 }
 
+.live-theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.live-theme-option {
+  flex: 1 1 calc(50% - 6px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.live-theme-option:hover {
+  color: var(--text-primary);
+}
+
+.live-theme-option.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--text-primary);
+}
+
+.live-theme-swatch {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
@@ -451,6 +758,30 @@ body {
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
+}
+
+.sync-provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  flex-wrap: wrap;
+}
+
+.sync-provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.sync-provider-row .preset-button {
+  flex: none;
 }
 
 .toggle-switch {
@@ -549,4 +880,154 @@ body {
   border-color: var(--accent-soft-border);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* --- Mobile shell (Android) --- */
+/* App.tsx рендерит на мобильных платформах отдельный MobileShell, а не
+   растягивает десктопный OverlayHeader/верхние вкладки (isDesktop из
+   is_desktop_platform, раздел 11 ТЗ — Android не должен быть "сайтом в
+   растянутом desktop-окне"): контекстный заголовок сверху вместо статичного
+   бренда + иконок, навигация снизу — большим пальцем удобнее, чем тянуться
+   в верхний угол за настройками. */
+.mobile-shell {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.mobile-topbar-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bottom-nav {
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--divider);
+  border-bottom: none;
+  gap: 0;
+}
+
+.bottom-nav .tab {
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 4px;
+  font-size: 11px;
+  border-radius: 10px;
+}
+
+.bottom-nav .tab.tab-active {
+  color: var(--accent);
+}
+
+/* Контент вкладок (День/Заметки/Напоминания/Настройки) общий для десктопа и
+   мобильного — на телефоне ему нужен масштаб побольше, чем в компактном
+   380x480 оверлее. */
+.mobile-shell .body {
+  padding: 18px;
+  font-size: 16px;
+}
+
+.mobile-shell .day-date {
+  font-size: 18px;
+}
+
+.mobile-shell .day-count {
+  font-size: 13px;
+}
+
+.mobile-shell .plan-item {
+  padding: 12px 8px;
+  gap: 14px;
+}
+
+.mobile-shell .plan-checkbox {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-shell .plan-title {
+  font-size: 16px;
+}
+
+.mobile-shell .plan-progress {
+  font-size: 12px;
+}
+
+.mobile-shell .quick-add {
+  padding: 12px 14px;
+}
+
+.mobile-shell .quick-add input {
+  font-size: 16px;
+}
+
+.mobile-shell .reminder-custom-time input[type="datetime-local"] {
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.mobile-shell .reminder-custom-time .preset-button {
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.mobile-shell .note-item,
+.mobile-shell .reminder-item {
+  padding: 12px 14px;
+}
+
+.mobile-shell .note-body,
+.mobile-shell .reminder-title {
+  font-size: 16px;
+}
+
+.mobile-shell .reminder-time {
+  font-size: 12px;
+}
+
+.mobile-shell .settings-header {
+  font-size: 16px;
+}
+
+.mobile-shell .settings-group-label {
+  font-size: 12px;
+}
+
+.mobile-shell .toggle-row {
+  font-size: 14px;
+  padding: 12px 14px;
+}
+
+.mobile-shell .theme-option {
+  font-size: 12px;
+  padding: 12px 8px;
+}
+
+.mobile-shell .live-theme-option {
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.mobile-shell .live-theme-swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-shell .settings-hint {
+  font-size: 13px;
+}
+
+.mobile-shell .empty-state {
+  font-size: 14px;
 }

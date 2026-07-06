@@ -4,7 +4,21 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 
-export type ThemeMode = "system" | "light" | "dark";
+// aurora/sunset/ocean/forest — "живые" темы с анимированным фоном (см.
+// theme.css и useLiveBackgroundPointer), а не просто другая палитра.
+export type ThemeMode =
+  | "system"
+  | "light"
+  | "dark"
+  | "aurora"
+  | "sunset"
+  | "ocean"
+  | "forest";
+
+// Раздел 22 ТЗ: "i18n ru/en минимум, структура под 10 языков" — Locale как
+// союз-тип (не string) специально узкий, чтобы TypeScript сам не давал
+// пропустить перевод новой строки при добавлении языка (см. shared/translations.ts).
+export type Locale = "ru" | "en";
 
 export interface ShortcutInfo {
   shortcut: string;
@@ -25,6 +39,7 @@ export interface Note {
   title: string | null;
   body: string;
   kind: "text" | "audio" | "transcript" | "audio_with_transcript";
+  audioPath: string | null;
 }
 
 export interface Reminder {
@@ -32,6 +47,24 @@ export interface Reminder {
   title: string;
   triggerAtUtc: string;
   status: string;
+}
+
+export interface Profile {
+  id: string;
+  displayName: string;
+  avatarColor: string;
+}
+
+export interface ProfilesResponse {
+  profiles: Profile[];
+  activeProfileId: string;
+}
+
+// Раздел 14 ТЗ, sync — только аутентификация в этом шаге (см. oauth.rs).
+export type SyncProvider = "google_drive" | "yandex_disk";
+
+export interface ConnectionStatus {
+  connected: boolean;
 }
 
 let storePromise: Promise<Store> | null = null;
@@ -57,10 +90,24 @@ export const commands = {
     async getShortcutStatus(): Promise<ShortcutInfo | null> {
       return invoke<ShortcutInfo | null>("get_shortcut_status");
     },
+    async isDesktop(): Promise<boolean> {
+      return invoke<boolean>("is_desktop_platform");
+    },
     async close() {
       // Прячет в tray (см. lib.rs::CloseRequested) — реально выходит только
       // пункт трея "Выход".
       await getCurrentWindow().close();
+    },
+  },
+  profiles: {
+    async list(): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("list_profiles");
+    },
+    async create(displayName: string): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("create_profile", { displayName });
+    },
+    async switchTo(id: string): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("switch_active_profile", { id });
     },
   },
   planItems: {
@@ -73,6 +120,15 @@ export const commands = {
     async toggleDone(id: string): Promise<PlanItem> {
       return invoke<PlanItem>("toggle_plan_item_done", { id });
     },
+    async cycleProgress(id: string): Promise<PlanItem> {
+      return invoke<PlanItem>("cycle_plan_item_progress", { id });
+    },
+    async toggleDeferred(id: string): Promise<PlanItem> {
+      return invoke<PlanItem>("toggle_plan_item_deferred", { id });
+    },
+    async delete(id: string) {
+      await invoke("delete_plan_item", { id });
+    },
   },
   notes: {
     async list(): Promise<Note[]> {
@@ -80,6 +136,15 @@ export const commands = {
     },
     async create(body: string): Promise<Note> {
       return invoke<Note>("create_note", { body });
+    },
+    async createAudio(audioBase64: string): Promise<Note> {
+      return invoke<Note>("create_audio_note", { audioBase64 });
+    },
+    async getAudio(id: string): Promise<string> {
+      return invoke<string>("get_note_audio", { id });
+    },
+    async delete(id: string) {
+      await invoke("delete_note", { id });
     },
   },
   reminders: {
@@ -97,6 +162,9 @@ export const commands = {
     },
     async snooze(id: string, newTriggerAtUtc: string) {
       await invoke("snooze_reminder", { id, newTriggerAtUtc });
+    },
+    async delete(id: string) {
+      await invoke("delete_reminder", { id });
     },
   },
   settings: {
@@ -118,6 +186,31 @@ export const commands = {
       } else {
         await disable();
       }
+    },
+    async getLocale(): Promise<Locale | null> {
+      const store = await settingsStore();
+      const value = await store.get<Locale>("locale");
+      return value ?? null;
+    },
+    async setLocale(locale: Locale) {
+      const store = await settingsStore();
+      await store.set("locale", locale);
+    },
+  },
+  diagnostics: {
+    async export(): Promise<string> {
+      return invoke<string>("export_diagnostics");
+    },
+  },
+  sync: {
+    async start(provider: SyncProvider) {
+      await invoke("start_provider_auth", { provider });
+    },
+    async status(provider: SyncProvider): Promise<ConnectionStatus> {
+      return invoke<ConnectionStatus>("connection_status", { provider });
+    },
+    async disconnect(provider: SyncProvider) {
+      await invoke("disconnect_provider", { provider });
     },
   },
 };

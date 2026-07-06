@@ -9,6 +9,8 @@
     "core:window:allow-start-dragging",
     "store:default",
     "global-shortcut:default",
-    "autostart:default"
+    "autostart:default",
+    "reminder-alarm:default",
+    "opener:default"
   ]
 }

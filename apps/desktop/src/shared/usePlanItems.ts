@@ -27,5 +27,25 @@ export function usePlanItems() {
     }
   }, []);
 
-  return { items, loaded, addItem, toggleDone };
+  const cycleProgress = useCallback(async (id: string) => {
+    const updated = await commands.planItems.cycleProgress(id).catch(() => null);
+    if (updated) {
+      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    }
+  }, []);
+
+  const toggleDeferred = useCallback(async (id: string) => {
+    const updated = await commands.planItems.toggleDeferred(id).catch(() => null);
+    if (updated) {
+      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    }
+  }, []);
+
+  const deleteItem = useCallback(async (id: string) => {
+    const previous = items;
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    await commands.planItems.delete(id).catch(() => setItems(previous));
+  }, [items]);
+
+  return { items, loaded, addItem, toggleDone, cycleProgress, toggleDeferred, deleteItem };
 }

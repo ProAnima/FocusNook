@@ -35,5 +35,47 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+uuid = { version = "1", features = ["v4", "v7"] }
+keyring = { version = "3", features = ["windows-native"] }
+base64 = "0.22"
+# At-rest шифрование аудиофайлов (раздел 16 ТЗ / P1 ревью — vault шифруется,
+# а audio/*.webm лежал в открытую). Чистый Rust, не openssl — этот проект уже
+# один раз заплатил часами сборки за Perl-требования OpenSSL (см. rusqlite
+# ниже, раздел 26), заводить второй C-тулчейн ради AES ради того же риска
+# на другой платформе смысла нет.
+aes-gcm = "0.10"
+sha2 = "0.10"
+tauri-plugin-reminder-alarm = { path = "../../../plugins/tauri-plugin-reminder-alarm" }
+
+# Раздел 14 ТЗ, sync — OAuth-фундамент (только аутентификация, см. архитектурный
+# документ). oauth2 — не хендролл: PKCE/CSRF-state имеют реальную security-
+# специфику, где ручная реализация повышает риск, а не снижает сложность (в
+# отличие от ручного HLC/ISO8601-парсера, где хендролл был именно проще крейта).
+oauth2 = "5"
+# rustls-tls, не native-tls (дефолт) — не тащить второй TLS/OpenSSL-стек поверх
+# уже имеющегося у rusqlite (bundled-sqlcipher-vendored-openssl и так стоил
+# часы на первую сборку из-за Perl-требований OpenSSL, раздел 26).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Минимальный однократный HTTP-listener для OAuth-redirect — не полноценный
+# веб-фреймворк (тот же механизм переиспользуется как мок-сервер в тестах).
+tiny_http = "0.12"
+tauri-plugin-opener = "2"
+# tokio уже резолвится транзитивно через сам Tauri (cargo tree -i tokio
+# подтверждает) — не новый вес в сборке, но Rust требует явного объявления
+# в Cargo.toml, чтобы называть crate напрямую в коде (spawn_blocking для
+# блокирующего tiny_http::Server::recv, см. oauth.rs).
+tokio = { version = "1", features = ["rt", "macros"] }
+
+# Раздел 26 ТЗ, спайк №2 — обновление: bundled-sqlcipher-vendored-openssl не
+# кросс-компилируется под Android с Windows-хоста (OpenSSL Configure требует
+# Perl с Unix-путями; Strawberry Perl нативно-Windows и отклоняется самим
+# Configure, а Perl из Git Bash проходит эту проверку, но не имеет модуля
+# Locale::Maketext::Simple). Пока это открытый технический риск — раздел 26.
+# До его решения Android-сборка идёт без at-rest шифрования БД (обычный
+# bundled SQLite); эквивалент Windows Credential Manager для Android
+# (Keystore/EncryptedSharedPreferences) тоже ещё не реализован.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled"] }
-uuid = { version = "1", features = ["v7"] }

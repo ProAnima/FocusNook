@@ -18,6 +18,8 @@
   --success-soft-bg: rgba(31, 157, 107, 0.12);
   --warning: #b8720a;
   --warning-soft-bg: rgba(184, 114, 10, 0.12);
+  --danger: #c23b3b;
+  --danger-soft-bg: rgba(194, 59, 59, 0.12);
 }
 
 [data-theme="dark"] {
@@ -37,4 +39,104 @@
   --success-soft-bg: rgba(99, 210, 155, 0.14);
   --warning: #f2b463;
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+}
+
+/* "Живые" темы: та же структура переменных, что у dark (тёмная база — на ней
+   размытые цветные пятна фона читаются лучше всего), плюс --bg-blob-a/b —
+   их использует .overlay-shell::before/::after в App.css. Семантические
+   цвета (success/warning/danger) и служебные (divider/control-bg) намеренно
+   переиспользуют значения dark — это одна и та же "тёмная семья" тем, и
+   разъезжаться в семантике (что green/red означают) смысла нет. */
+[data-theme="aurora"] {
+  --surface-gradient: linear-gradient(165deg, #232049 0%, #121026 100%);
+  --surface-border: rgba(155, 140, 255, 0.14);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #f2f0fb;
+  --text-secondary: #b9b3d9;
+  --text-tertiary: #7d76a3;
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --accent: #9b8cff;
+  --accent-soft-bg: rgba(155, 140, 255, 0.16);
+  --accent-soft-border: rgba(155, 140, 255, 0.42);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #6d5bff;
+  --bg-blob-b: #2fd6c0;
+}
+
+[data-theme="sunset"] {
+  --surface-gradient: linear-gradient(165deg, #33203a 0%, #170f1c 100%);
+  --surface-border: rgba(255, 154, 108, 0.14);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #fdf0ea;
+  --text-secondary: #dcb2a8;
+  --text-tertiary: #9c7268;
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --accent: #ff8a5c;
+  --accent-soft-bg: rgba(255, 138, 92, 0.16);
+  --accent-soft-border: rgba(255, 138, 92, 0.42);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #ff7a59;
+  --bg-blob-b: #ffc857;
+}
+
+[data-theme="ocean"] {
+  --surface-gradient: linear-gradient(165deg, #123244 0%, #0a1822 100%);
+  --surface-border: rgba(79, 209, 224, 0.14);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #eaf6f8;
+  --text-secondary: #a7c9d1;
+  --text-tertiary: #6a8e97;
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --accent: #4fd1e0;
+  --accent-soft-bg: rgba(79, 209, 224, 0.16);
+  --accent-soft-border: rgba(79, 209, 224, 0.42);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #2ea8c9;
+  --bg-blob-b: #1fe0a8;
+}
+
+[data-theme="forest"] {
+  --surface-gradient: linear-gradient(165deg, #1c3020 0%, #0e1811 100%);
+  --surface-border: rgba(127, 206, 106, 0.14);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #eef5ec;
+  --text-secondary: #b7c9b3;
+  --text-tertiary: #7c8f78;
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --accent: #7fce6a;
+  --accent-soft-bg: rgba(127, 206, 106, 0.16);
+  --accent-soft-border: rgba(127, 206, 106, 0.42);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #4f9e5c;
+  --bg-blob-b: #c9a24a;
 }

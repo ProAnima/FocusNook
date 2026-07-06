@@ -20,5 +20,16 @@ export function useNotes() {
     if (created) setNotes((prev) => [created, ...prev]);
   }, []);
 
-  return { notes, loaded, addNote };
+  const addAudioNote = useCallback(async (base64: string) => {
+    const created = await commands.notes.createAudio(base64).catch(() => null);
+    if (created) setNotes((prev) => [created, ...prev]);
+  }, []);
+
+  const deleteNote = useCallback(async (id: string) => {
+    const previous = notes;
+    setNotes((prev) => prev.filter((note) => note.id !== id));
+    await commands.notes.delete(id).catch(() => setNotes(previous));
+  }, [notes]);
+
+  return { notes, loaded, addNote, addAudioNote, deleteNote };
 }

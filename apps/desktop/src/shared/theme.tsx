@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { commands, type ThemeMode } from "./commands";
-import { ThemeContext } from "./theme-context";
+import { ThemeContext, type ResolvedTheme } from "./theme-context";
 import { useSystemPrefersDark } from "./useSystemTheme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -27,8 +27,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const effective: "light" | "dark" =
-    mode === "system" ? (systemDark ? "dark" : "light") : mode;
+  const effective: ResolvedTheme = mode === "system" ? (systemDark ? "dark" : "light") : mode;
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", effective);

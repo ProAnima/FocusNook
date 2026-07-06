@@ -7,3 +7,19 @@ import "@testing-library/jest-dom/vitest";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom не реализует matchMedia — нужен только useSystemTheme (ThemeProvider),
+// который до App.test.tsx ни один тест не задевал напрямую (остальные тесты
+// рендерят отдельные компоненты, минуя ThemeProvider).
+if (!window.matchMedia) {
+  window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  });
+}

@@ -1,0 +1,9 @@
+[default]
+description = "Default permissions for the plugin"
+permissions = [
+    "allow-schedule-exact-alarm",
+    "allow-cancel-alarm",
+    "allow-can-schedule-exact-alarms",
+    "allow-request-exact-alarm-permission",
+    "allow-ensure-notification-permission",
+]

@@ -59,4 +59,17 @@ describe("ReminderAlert", () => {
 
     expect(snooze).toHaveBeenCalledWith("2", expect.any(String));
   });
+
+  it("moves keyboard focus to the primary action when it appears", async () => {
+    getCurrentAlert.mockResolvedValue({
+      id: "3",
+      title: "Фокус на кнопке",
+      triggerAtUtc: "2026-07-04T18:30:00.000Z",
+      status: "firing",
+    });
+    render(<ReminderAlert />);
+
+    const primary = await screen.findByText("Услышал");
+    await vi.waitFor(() => expect(primary).toHaveFocus());
+  });
 });

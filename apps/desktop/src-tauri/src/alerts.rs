@@ -1,8 +1,11 @@
 use crate::{db, reminders};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::Manager;
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub const ALERT_WINDOW_LABEL: &str = "reminder-alert";
 const POLL_INTERVAL_SECS: u64 = 20;
@@ -15,12 +18,35 @@ const POLL_INTERVAL_SECS: u64 = 20;
 pub struct AlertState {
     queue: Mutex<VecDeque<reminders::ReminderDto>>,
     current: Mutex<Option<reminders::ReminderDto>>,
+    // Раздел 19 ТЗ, "reminder scheduler health" — 0 значит "ещё ни разу не
+    // опрашивал" (на Android так и остаётся: там опрос не запускается, см.
+    // spawn_scheduler ниже), а не наносекунду unix-эпохи.
+    last_poll_at_millis: AtomicI64,
 }
 
 pub fn current_alert(state: &AlertState) -> Option<reminders::ReminderDto> {
     state.current.lock().ok()?.clone()
 }
 
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+pub fn seconds_since_last_poll(state: &AlertState) -> Option<i64> {
+    let last = state.last_poll_at_millis.load(Ordering::Relaxed);
+    if last == 0 {
+        return None;
+    }
+    Some((now_millis() - last) / 1000)
+}
+
+// Только десктоп: на Android срабатывание идёт через системный AlarmManager
+// (плагин reminder-alarm, планируется прямо при create/snooze_reminder в
+// lib.rs) — он переживает смерть процесса, а этот опрос не переживает.
+#[cfg(desktop)]
 pub fn spawn_scheduler(app: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
@@ -28,7 +54,13 @@ pub fn spawn_scheduler(app: tauri::AppHandle) {
     });
 }
 
+#[cfg(desktop)]
 fn check_due_reminders(app: &tauri::AppHandle) {
+    let state = app.state::<AlertState>();
+    state
+        .last_poll_at_millis
+        .store(now_millis(), Ordering::Relaxed);
+
     let db = app.state::<db::Db>();
     let due = {
         let Ok(conn) = db.0.lock() else { return };
@@ -37,6 +69,7 @@ fn check_due_reminders(app: &tauri::AppHandle) {
     if due.is_empty() {
         return;
     }
+    eprintln!("alerts: найдено due-напоминаний: {}", due.len());
 
     if let Ok(conn) = db.0.lock() {
         for reminder in &due {
@@ -44,7 +77,6 @@ fn check_due_reminders(app: &tauri::AppHandle) {
         }
     }
 
-    let state = app.state::<AlertState>();
     if let Ok(mut queue) = state.queue.lock() {
         queue.extend(due);
     }
@@ -65,21 +97,42 @@ pub fn show_next_alert_if_idle(app: &tauri::AppHandle) {
     if let Ok(mut current) = state.current.lock() {
         *current = Some(reminder);
     }
-    let _ = open_alert_window(app);
+    if let Err(err) = open_alert_window(app) {
+        eprintln!("alerts: не удалось открыть окно напоминания: {err}");
+    }
 }
 
+#[cfg(desktop)]
 fn open_alert_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let window = WebviewWindowBuilder::new(app, ALERT_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-        .title("Напоминание")
-        .inner_size(300.0, 190.0)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .resizable(false)
-        .skip_taskbar(true)
-        .center()
-        .build()?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        ALERT_WINDOW_LABEL,
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("Напоминание")
+    .inner_size(300.0, 190.0)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .center()
+    .build()?;
+    eprintln!("alerts: окно напоминания открыто");
     let _ = window.set_focus();
+    Ok(())
+}
+
+// Раздел 11 ТЗ: на Android показ идёт через системное уведомление, не через
+// отдельное окно (мобильная модель Tauri — одна Activity/WebView на
+// приложение, второе WebviewWindow как на десктопе не открыть). Само
+// уведомление и AlarmManager-планирование теперь реализованы в плагине
+// reminder-alarm (см. lib.rs::schedule_android_alarm) — эта функция здесь
+// по сути недостижима на Android (очередь AlertState никогда не заполняется
+// без spawn_scheduler, см. выше), оставлена как безопасный no-op на случай,
+// если resolve_current_alert всё же вызовется.
+#[cfg(not(desktop))]
+fn open_alert_window(_app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 

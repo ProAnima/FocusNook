@@ -24,5 +24,11 @@ export function useReminders() {
     }
   }, []);
 
-  return { reminders, loaded, addReminder };
+  const deleteReminder = useCallback(async (id: string) => {
+    const previous = reminders;
+    setReminders((prev) => prev.filter((reminder) => reminder.id !== id));
+    await commands.reminders.delete(id).catch(() => setReminders(previous));
+  }, [reminders]);
+
+  return { reminders, loaded, addReminder, deleteReminder };
 }

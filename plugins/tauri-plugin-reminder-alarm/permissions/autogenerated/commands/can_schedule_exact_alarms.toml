@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-can-schedule-exact-alarms"
+description = "Enables the can_schedule_exact_alarms command without any pre-configured scope."
+commands.allow = ["can_schedule_exact_alarms"]
+
+[[permission]]
+identifier = "deny-can-schedule-exact-alarms"
+description = "Denies the can_schedule_exact_alarms command without any pre-configured scope."
+commands.deny = ["can_schedule_exact_alarms"]

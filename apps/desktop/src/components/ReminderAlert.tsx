@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BellRing } from "lucide-react";
 import { commands, type Reminder } from "../shared/commands";
 import { playChime } from "../shared/playChime";
+import { useLocale } from "../shared/useLocale";
 
 function AlertActions({
   onAcknowledge,
@@ -12,19 +13,29 @@ function AlertActions({
   onSnooze: (minutes: number) => void;
   onSnoozeTomorrow: () => void;
 }) {
+  const { t } = useLocale();
+  const primaryRef = useRef<HTMLButtonElement>(null);
+
+  // Раздел 21 ТЗ, screen reader smoke test: это отдельное topmost-окно,
+  // которое появляется без действия пользователя — без явного фокуса
+  // клавиатурный/screen reader пользователь не имеет стартовой точки на нём.
+  useEffect(() => {
+    primaryRef.current?.focus();
+  }, []);
+
   return (
     <div className="alert-actions">
-      <button className="alert-action alert-action-primary" onClick={onAcknowledge}>
-        Услышал
+      <button ref={primaryRef} className="alert-action alert-action-primary" onClick={onAcknowledge}>
+        {t("alert.acknowledge")}
       </button>
       <button className="alert-action" onClick={() => onSnooze(5)}>
-        5 мин
+        {t("alert.snooze5")}
       </button>
       <button className="alert-action" onClick={() => onSnooze(30)}>
-        30 мин
+        {t("alert.snooze30")}
       </button>
       <button className="alert-action" onClick={onSnoozeTomorrow}>
-        Завтра
+        {t("alert.snoozeTomorrow")}
       </button>
     </div>
   );
