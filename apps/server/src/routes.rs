@@ -76,8 +76,8 @@ async fn admin_monitor(
             COALESCE((SELECT count(*) FROM devices d WHERE d.user_id = u.id AND d.revoked_at IS NULL), 0) AS devices,
             COALESCE((SELECT count(*) FROM sync_operations o WHERE o.user_id = u.id), 0) AS operations,
             COALESCE((SELECT count(*) FROM sync_blobs b WHERE b.user_id = u.id), 0) AS blobs,
-            COALESCE((SELECT sum(octet_length(o.payload_ciphertext_enc)) FROM sync_operations o WHERE o.user_id = u.id), 0)
-              + COALESCE((SELECT sum(b.size_bytes) FROM sync_blobs b WHERE b.user_id = u.id), 0) AS storage_bytes,
+            COALESCE((SELECT sum(octet_length(o.payload_ciphertext_enc)) FROM sync_operations o WHERE o.user_id = u.id), 0)::BIGINT
+              + COALESCE((SELECT sum(b.size_bytes) FROM sync_blobs b WHERE b.user_id = u.id), 0)::BIGINT AS storage_bytes,
             COALESCE(t.inbound_bytes, 0) AS inbound_bytes,
             COALESCE(t.outbound_bytes, 0) AS outbound_bytes,
             GREATEST(
