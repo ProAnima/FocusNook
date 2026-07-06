@@ -1,3 +1,4 @@
+use crate::account_auth::{hash_password, normalize_email, validate_password, verify_password};
 use crate::admin_web::ADMIN_HTML;
 use crate::auth::{issue_token, require_admin, require_device, require_user};
 use crate::error::{AppError, AppResult};
@@ -27,6 +28,8 @@ pub fn router(state: AppState) -> axum::Router {
         .route("/v1/admin/monitor", get(admin_monitor))
         .route("/v1/admin/stats", get(admin_stats))
         .route("/v1/admin/users", post(create_user))
+        .route("/v1/accounts/register", post(register_account))
+        .route("/v1/accounts/login", post(login_account))
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/exchange", post(exchange))
         .route("/v1/blobs", post(upload_blob))
@@ -172,6 +175,111 @@ async fn create_user(
     }))
 }
 
+async fn register_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AccountAuthRequest>,
+) -> AppResult<Json<AccountAuthResponse>> {
+    let ip = client_ip(&headers);
+    let email = normalize_email(&request.email)?;
+    validate_password(&request.password)?;
+    validate_id(&request.device_id, "deviceId", 160)?;
+    validate_label(&request.device_name, "deviceName", 120)?;
+    validate_label(&request.platform, "platform", 40)?;
+    state.account_auth.record_registration(&ip)?;
+    let display_name = account_display_name(request.display_name.as_deref(), &email)?;
+    let password_hash = hash_password(&request.password)?;
+    let mut tx = state.pool.begin().await?;
+    let user_id =
+        sqlx::query_scalar::<_, Uuid>("INSERT INTO users (display_name) VALUES ($1) RETURNING id")
+            .bind(&display_name)
+            .fetch_one(&mut *tx)
+            .await?;
+    let account_result = sqlx::query(
+        "INSERT INTO user_accounts (user_id, email, password_hash)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(user_id)
+    .bind(&email)
+    .bind(&password_hash)
+    .execute(&mut *tx)
+    .await;
+    if is_unique_violation(&account_result) {
+        return Err(AppError::Conflict(
+            "email is already registered".to_string(),
+        ));
+    }
+    account_result?;
+    let device_token = upsert_device_token(
+        &mut tx,
+        &state,
+        user_id,
+        &request.device_id,
+        &request.device_name,
+        &request.platform,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(AccountAuthResponse {
+        device_token,
+        email,
+        display_name,
+        user_id,
+    }))
+}
+
+async fn login_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AccountAuthRequest>,
+) -> AppResult<Json<AccountAuthResponse>> {
+    let ip = client_ip(&headers);
+    let email = normalize_email(&request.email)?;
+    validate_id(&request.device_id, "deviceId", 160)?;
+    validate_label(&request.device_name, "deviceName", 120)?;
+    validate_label(&request.platform, "platform", 40)?;
+    state.account_auth.ensure_not_locked(&ip, &email)?;
+    let row = sqlx::query_as::<_, AccountLoginRow>(
+        "SELECT u.id AS user_id, u.display_name, a.password_hash
+         FROM user_accounts a
+         JOIN users u ON u.id = a.user_id
+         WHERE a.email = $1 AND u.disabled_at IS NULL",
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some(row) = row else {
+        state.account_auth.record_failure(&ip, &email)?;
+        return Err(AppError::Unauthorized);
+    };
+    if !verify_password(&request.password, &row.password_hash)? {
+        state.account_auth.record_failure(&ip, &email)?;
+        return Err(AppError::Unauthorized);
+    }
+    state.account_auth.clear_failures(&ip, &email)?;
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("UPDATE user_accounts SET last_login_at = now() WHERE user_id = $1")
+        .bind(row.user_id)
+        .execute(&mut *tx)
+        .await?;
+    let device_token = upsert_device_token(
+        &mut tx,
+        &state,
+        row.user_id,
+        &request.device_id,
+        &request.device_name,
+        &request.platform,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(AccountAuthResponse {
+        device_token,
+        email,
+        display_name: row.display_name,
+        user_id: row.user_id,
+    }))
+}
+
 async fn register_device(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -182,6 +290,46 @@ async fn register_device(
     validate_label(&request.display_name, "displayName", 120)?;
     validate_label(&request.platform, "platform", 40)?;
 
+    let mut tx = state.pool.begin().await?;
+    let (device_token, device_row_id, created_at) = upsert_device_token_with_row(
+        &mut tx,
+        &state,
+        auth.user_id,
+        &request.device_id,
+        &request.display_name,
+        &request.platform,
+    )
+    .await?;
+    tx.commit().await?;
+
+    Ok(Json(RegisterDeviceResponse {
+        device_row_id,
+        created_at,
+        device_token,
+    }))
+}
+
+async fn upsert_device_token(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    state: &AppState,
+    user_id: Uuid,
+    device_id: &str,
+    display_name: &str,
+    platform: &str,
+) -> AppResult<String> {
+    upsert_device_token_with_row(tx, state, user_id, device_id, display_name, platform)
+        .await
+        .map(|row| row.0)
+}
+
+async fn upsert_device_token_with_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    state: &AppState,
+    user_id: Uuid,
+    device_id: &str,
+    display_name: &str,
+    platform: &str,
+) -> AppResult<(String, Uuid, DateTime<Utc>)> {
     let issued = issue_token("fnk_device", &state.config.token_pepper)?;
     let row = sqlx::query_as::<_, (Uuid, DateTime<Utc>)>(
         "INSERT INTO devices (user_id, device_id, display_name, platform, token_hash, last_seen_at)
@@ -195,19 +343,14 @@ async fn register_device(
            revoked_at = NULL
          RETURNING id, created_at",
     )
-    .bind(auth.user_id)
-    .bind(request.device_id.trim())
-    .bind(request.display_name.trim())
-    .bind(request.platform.trim())
+    .bind(user_id)
+    .bind(device_id.trim())
+    .bind(display_name.trim())
+    .bind(platform.trim())
     .bind(&issued.token_hash)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut **tx)
     .await?;
-
-    Ok(Json(RegisterDeviceResponse {
-        device_row_id: row.0,
-        created_at: row.1,
-        device_token: issued.token,
-    }))
+    Ok((issued.token, row.0, row.1))
 }
 
 async fn exchange(
@@ -630,6 +773,25 @@ fn validate_label(value: &str, field: &str, max_len: usize) -> AppResult<()> {
     Ok(())
 }
 
+fn account_display_name(raw: Option<&str>, email: &str) -> AppResult<String> {
+    let fallback = email.split('@').next().unwrap_or("FocusNook").to_string();
+    let display_name = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&fallback);
+    validate_label(display_name, "displayName", 120)?;
+    Ok(display_name.to_string())
+}
+
+fn is_unique_violation(result: &Result<sqlx::postgres::PgQueryResult, sqlx::Error>) -> bool {
+    result
+        .as_ref()
+        .err()
+        .and_then(sqlx::Error::as_database_error)
+        .and_then(|err| err.code())
+        .is_some_and(|code| code == "23505")
+}
+
 fn require_admin_web_session(headers: &HeaderMap, state: &AppState) -> AppResult<()> {
     let raw = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -766,6 +928,33 @@ struct RegisterDeviceResponse {
     created_at: DateTime<Utc>,
     device_row_id: Uuid,
     device_token: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountAuthRequest {
+    email: String,
+    password: String,
+    display_name: Option<String>,
+    device_id: String,
+    device_name: String,
+    platform: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountAuthResponse {
+    device_token: String,
+    email: String,
+    display_name: String,
+    user_id: Uuid,
+}
+
+#[derive(FromRow)]
+struct AccountLoginRow {
+    display_name: String,
+    password_hash: String,
+    user_id: Uuid,
 }
 
 #[derive(Deserialize)]

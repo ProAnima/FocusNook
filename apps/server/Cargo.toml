@@ -13,6 +13,7 @@ unimplemented = "deny"
 
 [dependencies]
 aes-gcm = "0.10"
+argon2 = "0.5"
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }

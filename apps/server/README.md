@@ -79,6 +79,26 @@ curl -sS https://sync.example.com/v1/devices \
 
 The response contains `deviceToken` once. Sync calls use this token.
 
+Product clients should use email/password auth instead of embedding a user token:
+
+```bash
+curl -sS https://sync.example.com/v1/accounts/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email":"user@example.com",
+    "password":"StrongPass123",
+    "displayName":"User",
+    "deviceId":"desktop-device-id",
+    "deviceName":"Windows desktop",
+    "platform":"windows"
+  }'
+```
+
+`/v1/accounts/login` accepts the same shape without requiring `displayName`. Both endpoints
+return a one-time `deviceToken`; clients store that device token in the OS credential vault.
+Passwords are stored as Argon2id hashes, and repeated failed logins are locked out per
+IP/email window.
+
 Check operational counters:
 
 ```bash
@@ -92,6 +112,8 @@ curl -sS https://sync.example.com/v1/admin/stats \
 - `GET /readyz` - database is reachable.
 - `GET /v1/admin/stats` - operational counters, admin token required.
 - `POST /v1/admin/users` - create a sync user, admin token required.
+- `POST /v1/accounts/register` - create a user account and register the current device.
+- `POST /v1/accounts/login` - sign in and rotate/register the current device token.
 - `POST /v1/devices` - register or rotate a device token, user token required.
 - `POST /v1/sync/exchange` - push local operations and pull remote operations, device token required.
 - `POST /v1/blobs` - upload an encrypted blob, device token required.

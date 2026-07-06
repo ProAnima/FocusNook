@@ -70,8 +70,19 @@ vi.mock("./shared/commands", () => {
       },
       diagnostics: { export: reject },
       serverSync: {
-        status: () => Promise.resolve({ available: true, connected: false, endpoint: null, message: null }),
+        status: () =>
+          Promise.resolve({
+            available: true,
+            accountEmail: null,
+            accountUserId: null,
+            connected: false,
+            displayName: null,
+            endpoint: null,
+            message: null,
+          }),
         connectDefault: reject,
+        login: reject,
+        register: reject,
         disconnect: reject,
       },
     },

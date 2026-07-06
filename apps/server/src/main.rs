@@ -1,3 +1,4 @@
+mod account_auth;
 mod admin_web;
 mod auth;
 mod config;

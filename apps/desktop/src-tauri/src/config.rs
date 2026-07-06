@@ -11,6 +11,7 @@ use std::path::Path;
 // приложения, общая на инсталляцию, а не что-то по своей природе привязанное
 // к конкретному профилю (в отличие от refresh-токенов, см. sync_tokens.rs).
 const CONFIG_FILENAME: &str = "sync_providers.json";
+pub const DEFAULT_SERVER_ENDPOINT: &str = "https://focus.proanima.net";
 
 #[derive(Clone)]
 pub struct ProviderCredentials {
@@ -28,7 +29,7 @@ pub struct SyncProvidersConfig {
 #[derive(Clone)]
 pub struct ServerSyncBootstrap {
     pub endpoint: String,
-    pub user_token: String,
+    pub user_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -41,15 +42,17 @@ struct RawCredentials {
 
 #[derive(Deserialize)]
 struct RawServerSyncBootstrap {
-    endpoint: String,
+    endpoint: Option<String>,
     #[serde(rename = "userToken")]
-    user_token: String,
+    user_token: Option<String>,
 }
 
 impl From<RawServerSyncBootstrap> for ServerSyncBootstrap {
     fn from(raw: RawServerSyncBootstrap) -> Self {
         ServerSyncBootstrap {
-            endpoint: raw.endpoint,
+            endpoint: raw
+                .endpoint
+                .unwrap_or_else(|| DEFAULT_SERVER_ENDPOINT.to_string()),
             user_token: raw.user_token,
         }
     }
@@ -163,7 +166,18 @@ mod tests {
         let config = load(&dir);
         let server = config.server.unwrap();
         assert_eq!(server.endpoint, "https://focus.proanima.net");
-        assert_eq!(server.user_token, "fnk_user_secret");
+        assert_eq!(server.user_token.as_deref(), Some("fnk_user_secret"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn server_sync_endpoint_has_a_product_default() {
+        let dir = temp_dir();
+        write_config(&dir, r#"{"server": {}}"#);
+        let config = load(&dir);
+        let server = config.server.unwrap();
+        assert_eq!(server.endpoint, DEFAULT_SERVER_ENDPOINT);
+        assert!(server.user_token.is_none());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

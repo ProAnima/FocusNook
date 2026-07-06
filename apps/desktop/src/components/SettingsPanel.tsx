@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, X } from "lucide-react";
+import { Activity, Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, UserRound, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
 import { commands, type Locale, type NoteFolderSort, type SyncProvider } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
@@ -390,9 +390,15 @@ function SyncProviderRow({
 
 function ServerSyncRow() {
   const { t } = useLocale();
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [available, setAvailable] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [savedEndpoint, setSavedEndpoint] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
 
@@ -402,11 +408,15 @@ function ServerSyncRow() {
       .then((status) => {
         setAvailable(status.available);
         setConnected(status.connected);
+        setAccountEmail(status.accountEmail);
+        setDisplayName(status.displayName);
         setSavedEndpoint(status.endpoint);
       })
       .catch(() => {
         setAvailable(false);
         setConnected(false);
+        setAccountEmail(null);
+        setDisplayName(null);
         setSavedEndpoint(null);
       });
   }, []);
@@ -419,11 +429,22 @@ function ServerSyncRow() {
     try {
       if (connected) {
         await commands.serverSync.disconnect();
+        setConnected(false);
+        setAccountEmail(null);
+        setDisplayName(null);
       } else {
-        const status = await commands.serverSync.connectDefault();
+        const nextEmail = email.trim();
+        const nextName = name.trim();
+        const status =
+          mode === "register"
+            ? await commands.serverSync.register(nextEmail, password, nextName)
+            : await commands.serverSync.login(nextEmail, password);
         setAvailable(status.available);
         setConnected(status.connected);
+        setAccountEmail(status.accountEmail);
+        setDisplayName(status.displayName);
         setSavedEndpoint(status.endpoint);
+        setPassword("");
       }
       refresh();
     } catch {
@@ -431,6 +452,26 @@ function ServerSyncRow() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (connected) {
+    return (
+      <div className="server-account-card is-connected">
+        <div className="server-account-head">
+          <div className="sync-provider-icon">
+            <UserRound size={15} />
+          </div>
+          <div className="sync-provider-info">
+            <span>{displayName || accountEmail || t("settings.syncServerAccount")}</span>
+            <span className="sync-provider-description">{accountEmail}</span>
+            <span className="settings-hint">{savedEndpoint}</span>
+          </div>
+          <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
+            {busy ? t("settings.syncConnecting") : t("settings.syncDisconnect")}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -442,17 +483,52 @@ function ServerSyncRow() {
         <span>{t("settings.syncServer")}</span>
         <span className="sync-provider-description">{t("settings.syncServerDesc")}</span>
         <span className="settings-hint">
-          {connected
-            ? `${t("settings.syncConnected")}: ${savedEndpoint}`
-            : available
-              ? t("settings.syncServerReady")
-              : t("settings.syncServerNotConfigured")}
+          {available ? t("settings.syncServerReady") : t("settings.syncServerNotConfigured")}
         </span>
       </div>
-      <button className="preset-button" onClick={() => void handleClick()} disabled={busy || (!available && !connected)}>
-        {busy ? t("settings.syncConnecting") : connected ? t("settings.syncDisconnect") : t("settings.syncEnable")}
-      </button>
-      {error && <p className="note-error">{t("settings.syncServerError")}</p>}
+      <div className="server-account-form">
+        <div className="server-account-tabs" role="tablist" aria-label={t("settings.syncServerAccount")}>
+          <button className={mode === "login" ? "is-active" : ""} type="button" onClick={() => setMode("login")}>
+            {t("settings.syncServerLogin")}
+          </button>
+          <button className={mode === "register" ? "is-active" : ""} type="button" onClick={() => setMode("register")}>
+            {t("settings.syncServerRegister")}
+          </button>
+        </div>
+        {mode === "register" && (
+          <input
+            className="server-sync-input"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("settings.syncServerName")}
+            autoComplete="name"
+          />
+        )}
+        <input
+          className="server-sync-input"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder={t("settings.syncServerEmail")}
+          autoComplete="email"
+          inputMode="email"
+        />
+        <input
+          className="server-sync-input"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder={t("settings.syncServerPassword")}
+          autoComplete={mode === "register" ? "new-password" : "current-password"}
+          type="password"
+        />
+        <button
+          className="preset-button"
+          onClick={() => void handleClick()}
+          disabled={busy || !available || !email.trim() || !password}
+        >
+          {busy ? t("settings.syncConnecting") : mode === "register" ? t("settings.syncServerCreate") : t("settings.syncServerSignIn")}
+        </button>
+        {error && <p className="note-error">{t("settings.syncServerAuthError")}</p>}
+      </div>
     </div>
   );
 }

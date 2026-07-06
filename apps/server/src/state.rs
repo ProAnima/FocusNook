@@ -1,3 +1,4 @@
+use crate::account_auth::AccountAuthState;
 use crate::admin_web::AdminWebState;
 use crate::config::Config;
 use crate::crypto::CryptoBox;
@@ -10,6 +11,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
+    pub account_auth: Arc<AccountAuthState>,
     pub crypto: Arc<CryptoBox>,
     pub pool: PgPool,
     pub web_admin: Arc<AdminWebState>,
@@ -26,6 +28,7 @@ impl AppState {
         let crypto = CryptoBox::new(&config.encryption_key)?;
         Ok(Self {
             config: Arc::new(config),
+            account_auth: Arc::new(AccountAuthState::default()),
             crypto: Arc::new(crypto),
             pool,
             web_admin: Arc::new(AdminWebState::default()),

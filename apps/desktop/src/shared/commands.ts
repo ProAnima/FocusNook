@@ -86,7 +86,10 @@ export interface ConnectionStatus {
 
 export interface ServerSyncStatus {
   available: boolean;
+  accountEmail: string | null;
+  accountUserId: string | null;
   connected: boolean;
+  displayName: string | null;
   endpoint: string | null;
   message: string | null;
 }
@@ -343,6 +346,12 @@ export const commands = {
     },
     async connectDefault(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_default_server_sync");
+    },
+    async register(email: string, password: string, displayName: string): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("register_server_account", { email, password, displayName });
+    },
+    async login(email: string, password: string): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("login_server_account", { email, password });
     },
     async connect(endpoint: string, token: string): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_server_sync", { endpoint, token });

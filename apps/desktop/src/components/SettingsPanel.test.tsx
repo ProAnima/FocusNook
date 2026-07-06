@@ -20,7 +20,8 @@ const {
   syncStart,
   syncDisconnect,
   serverSyncStatus,
-  serverSyncConnectDefault,
+  serverSyncLogin,
+  serverSyncRegister,
   serverSyncDisconnect,
 } = vi.hoisted(() => ({
   getAutostart: vi.fn().mockResolvedValue(false),
@@ -43,8 +44,33 @@ const {
   syncStatus: vi.fn().mockResolvedValue({ connected: false }),
   syncStart: vi.fn().mockResolvedValue(undefined),
   syncDisconnect: vi.fn().mockResolvedValue(undefined),
-  serverSyncStatus: vi.fn().mockResolvedValue({ available: true, connected: false, endpoint: null, message: null }),
-  serverSyncConnectDefault: vi.fn().mockResolvedValue({ available: true, connected: true, endpoint: "https://focus.proanima.net", message: null }),
+  serverSyncStatus: vi.fn().mockResolvedValue({
+    available: true,
+    accountEmail: null,
+    accountUserId: null,
+    connected: false,
+    displayName: null,
+    endpoint: null,
+    message: null,
+  }),
+  serverSyncLogin: vi.fn().mockResolvedValue({
+    available: true,
+    accountEmail: "user@example.com",
+    accountUserId: "user-1",
+    connected: true,
+    displayName: "User",
+    endpoint: "https://focus.proanima.net",
+    message: null,
+  }),
+  serverSyncRegister: vi.fn().mockResolvedValue({
+    available: true,
+    accountEmail: "user@example.com",
+    accountUserId: "user-1",
+    connected: true,
+    displayName: "User",
+    endpoint: "https://focus.proanima.net",
+    message: null,
+  }),
   serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -64,7 +90,8 @@ vi.mock("../shared/commands", () => ({
     sync: { readiness: syncReadiness, status: syncStatus, start: syncStart, disconnect: syncDisconnect },
     serverSync: {
       status: serverSyncStatus,
-      connectDefault: serverSyncConnectDefault,
+      login: serverSyncLogin,
+      register: serverSyncRegister,
       disconnect: serverSyncDisconnect,
     },
   },
@@ -228,17 +255,28 @@ describe("SettingsPanel", () => {
     expect(syncDisconnect).toHaveBeenCalledWith("yandex_disk");
   });
 
-  it("enables the configured server sync connection", async () => {
+  it("signs into the configured server account", async () => {
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
     await screen.findByText("Готово к подключению");
-    const serverCard = screen.getByText("ProAnima VDS").closest(".sync-provider-row");
-    const connectButton = serverCard?.querySelector("button");
+    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
+    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(screen.getByText("Войти"));
 
-    expect(connectButton).toBeTruthy();
-    await user.click(connectButton as HTMLButtonElement);
+    expect(serverSyncLogin).toHaveBeenCalledWith("user@example.com", "StrongPass123");
+  });
 
-    expect(serverSyncConnectDefault).toHaveBeenCalled();
+  it("creates a server account from the same profile card", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.click(await screen.findByText("Регистрация"));
+    await user.type(screen.getByPlaceholderText("Имя"), "User");
+    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
+    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(screen.getByText("Создать аккаунт"));
+
+    expect(serverSyncRegister).toHaveBeenCalledWith("user@example.com", "StrongPass123", "User");
   });
 });
