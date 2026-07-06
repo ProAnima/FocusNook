@@ -30,6 +30,7 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS reminders (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
+    audio_path TEXT,
     trigger_at_utc TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'scheduled',
     created_at TEXT NOT NULL
@@ -226,6 +227,7 @@ pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
     ensure_plan_items_plan_date_column(&conn)?;
     ensure_notes_audio_column(&conn)?;
     ensure_notes_group_column(&conn)?;
+    ensure_reminders_audio_column(&conn)?;
     Ok(conn)
 }
 
@@ -292,6 +294,22 @@ fn ensure_notes_group_column(conn: &Connection) -> Result<(), String> {
         .any(|name| name == "group_id");
     if !has_column {
         conn.execute("ALTER TABLE notes ADD COLUMN group_id TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_reminders_audio_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(reminders)")
+        .map_err(|e| e.to_string())?;
+    let has_column = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .any(|name| name == "audio_path");
+    if !has_column {
+        conn.execute("ALTER TABLE reminders ADD COLUMN audio_path TEXT", [])
             .map_err(|e| e.to_string())?;
     }
     Ok(())

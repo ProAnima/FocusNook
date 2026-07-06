@@ -4,8 +4,8 @@ use std::path::Path;
 use tauri::{Manager, PhysicalPosition, PhysicalSize};
 
 const WINDOW_STATE_FILENAME: &str = "window-state.json";
-const MIN_WIDTH: u32 = 320;
-const MIN_HEIGHT: u32 = 360;
+const MIN_WIDTH: u32 = 648;
+const MIN_HEIGHT: u32 = 392;
 const MAX_WIDTH: u32 = 900;
 const MAX_HEIGHT: u32 = 1200;
 
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn clamps_tiny_or_huge_sizes() {
-        assert_eq!(clamp_size(10, 10), (MIN_WIDTH, MIN_HEIGHT));
+        assert_eq!(clamp_size(10, 10), (648, MIN_HEIGHT));
         assert_eq!(clamp_size(2000, 2000), (MAX_WIDTH, MAX_HEIGHT));
     }
 
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(
             load_state(&dir),
             Some(MainWindowState {
-                width: 420,
+                width: 648,
                 height: 640,
                 x: Some(24),
                 y: Some(48),

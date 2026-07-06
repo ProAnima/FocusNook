@@ -14,14 +14,14 @@
       {
         "label": "main",
         "title": "FocusNook",
-        "width": 380,
-        "height": 480,
+        "width": 648,
+        "height": 512,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "resizable": true,
-        "minWidth": 320,
-        "minHeight": 360,
+        "minWidth": 648,
+        "minHeight": 392,
         "skipTaskbar": true,
         "shadow": false
       }

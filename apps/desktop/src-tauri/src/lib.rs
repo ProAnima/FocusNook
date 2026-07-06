@@ -15,7 +15,7 @@ mod sync_status;
 mod sync_tokens;
 mod window_state;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -48,6 +48,14 @@ struct ShortcutStatus {
 struct AppState {
     layer_front: AtomicBool,
     shortcut_status: Mutex<Option<ShortcutStatus>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateAudioReminderRequest {
+    title: String,
+    trigger_at_utc: String,
+    audio_base64: String,
 }
 
 // Ключ для шифрования аудиофайлов текущего профиля (см. audio_crypto.rs) —
@@ -547,8 +555,56 @@ fn create_reminder(
 }
 
 #[tauri::command]
+fn create_audio_reminder(
+    app: tauri::AppHandle,
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    audio_key_state: tauri::State<AudioKeyState>,
+    request: CreateAudioReminderRequest,
+) -> Result<reminders::ReminderDto, String> {
+    let reminder = {
+        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+        let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+        let profile_id = profiles::active_profile_id(&profiles_state)?;
+        let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?;
+        reminders::create_audio(
+            &mut conn,
+            &mut clock,
+            reminders::CreateAudioReminder {
+                profile_id: &profile_id,
+                audio_dir: &audio_dir(&profiles_state),
+                audio_key: audio_key.as_deref(),
+                title: &request.title,
+                trigger_at_utc: &request.trigger_at_utc,
+                base64_data: &request.audio_base64,
+            },
+        )?
+    };
+    schedule_android_alarm(&app, &reminder);
+    Ok(reminder)
+}
+
+#[tauri::command]
 fn get_current_alert(state: tauri::State<alerts::AlertState>) -> Option<reminders::ReminderDto> {
     alerts::current_alert(&state)
+}
+
+#[tauri::command]
+fn get_reminder_audio(
+    db: tauri::State<db::Db>,
+    audio_key_state: tauri::State<AudioKeyState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?;
+    reminders::read_audio(
+        &conn,
+        &audio_dir(&profiles_state),
+        audio_key.as_deref(),
+        &id,
+    )
 }
 
 #[tauri::command]
@@ -560,13 +616,14 @@ fn acknowledge_reminder(
     id: String,
 ) -> Result<(), String> {
     {
+        let dir = audio_dir(&profiles_state);
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
         let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
         let profile_id = profiles::active_profile_id(&profiles_state)?;
-        reminders::acknowledge(&mut conn, &mut clock, &profile_id, &id)
-            .map_err(|e| e.to_string())?;
+        reminders::delete(&mut conn, &mut clock, &profile_id, &dir, &id)?;
     }
     cancel_android_alarm(&app, &id);
+    let _ = app.emit("reminders-changed", ());
     alerts::resolve_current_alert(&app);
     Ok(())
 }
@@ -588,6 +645,7 @@ fn snooze_reminder(
             .map_err(|e| e.to_string())?
     };
     schedule_android_alarm(&app, &reminder);
+    let _ = app.emit("reminders-changed", ());
     alerts::resolve_current_alert(&app);
     Ok(())
 }
@@ -601,12 +659,14 @@ fn delete_reminder(
     id: String,
 ) -> Result<(), String> {
     {
+        let dir = audio_dir(&profiles_state);
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
         let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
         let profile_id = profiles::active_profile_id(&profiles_state)?;
-        reminders::delete(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())?;
+        reminders::delete(&mut conn, &mut clock, &profile_id, &dir, &id)?;
     }
     cancel_android_alarm(&app, &id);
+    let _ = app.emit("reminders-changed", ());
     Ok(())
 }
 
@@ -913,7 +973,9 @@ pub fn run() {
             sync_readiness_status,
             list_reminders,
             create_reminder,
+            create_audio_reminder,
             get_current_alert,
+            get_reminder_audio,
             acknowledge_reminder,
             snooze_reminder,
             delete_reminder,

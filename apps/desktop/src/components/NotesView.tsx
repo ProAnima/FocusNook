@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import {
   Check,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Folder,
   FolderOpen,
   GripVertical,
@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { commands, type Note, type NoteGroup } from "../shared/commands";
+import { commands, type Note, type NoteFolderSort, type NoteGroup } from "../shared/commands";
 import { useNotes } from "../shared/useNotes";
 import { useAudioRecorder } from "../shared/useAudioRecorder";
 import { useLocale } from "../shared/useLocale";
@@ -240,19 +240,28 @@ function NoteRow({
   const [editing, setEditing] = useState(false);
   const { t } = useLocale();
   const draggable = !editing;
+  function startDrag(event: DragEvent<HTMLElement>) {
+    if (!draggable) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, textarea, audio")) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.setData(NOTE_DRAG_TYPE, note.id);
+    event.dataTransfer.setData("text/plain", note.id);
+    event.dataTransfer.effectAllowed = "move";
+  }
+
   return (
-    <li className={`note-item ${note.kind === "audio" ? "is-audio" : ""} ${editing ? "is-editing" : ""}`}>
+    <li
+      className={`note-item ${note.kind === "audio" ? "is-audio" : ""} ${editing ? "is-editing" : ""}`}
+      draggable={draggable}
+      onDragStart={startDrag}
+    >
       <div
         className="note-drag-handle"
-        draggable={draggable}
         title={t("notes.dragHint")}
         aria-label={t("notes.dragHint")}
-        onDragStart={(event) => {
-          if (!draggable) return;
-          event.dataTransfer.setData(NOTE_DRAG_TYPE, note.id);
-          event.dataTransfer.setData("text/plain", note.id);
-          event.dataTransfer.effectAllowed = "move";
-        }}
       >
         <GripVertical size={13} />
       </div>
@@ -328,6 +337,8 @@ function DropFolderButton({
     <button
       className={`note-folder-chip ${active ? "is-active" : ""} ${dragOver ? "is-drop-target" : ""}`}
       type="button"
+      title={label}
+      aria-label={label}
       onClick={onClick}
       onDragOver={(event) => {
         if (!onDropNote) return;
@@ -339,7 +350,7 @@ function DropFolderButton({
       onDrop={handleDrop}
     >
       {icon === "all" ? <Inbox size={13} /> : <Folder size={13} />}
-      <span>{label}</span>
+      <span className="note-folder-label">{label}</span>
       <small>{count}</small>
     </button>
   );
@@ -349,6 +360,7 @@ function NoteFolders({
   activeGroupId,
   groups,
   notes,
+  sort,
   onSelect,
   onCreate,
   onMove,
@@ -356,40 +368,31 @@ function NoteFolders({
   activeGroupId: string | null | "__all";
   groups: NoteGroup[];
   notes: Note[];
+  sort: NoteFolderSort;
   onSelect: (groupId: string | null | "__all") => void;
   onCreate: (name: string) => void;
   onMove: (noteId: string, groupId: string | null) => void;
 }) {
+  const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
   const { t } = useLocale();
-
-  const updateScrollState = useCallback(() => {
-    const list = listRef.current;
-    if (!list) return;
-    setCanScrollLeft(list.scrollLeft > 2);
-    setCanScrollRight(list.scrollLeft + list.clientWidth < list.scrollWidth - 2);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(updateScrollState, 0);
-    const list = listRef.current;
-    list?.addEventListener("scroll", updateScrollState, { passive: true });
-    window.addEventListener("resize", updateScrollState);
-    return () => {
-      window.clearTimeout(timer);
-      list?.removeEventListener("scroll", updateScrollState);
-      window.removeEventListener("resize", updateScrollState);
-    };
-  }, [groups.length, notes.length, updateScrollState]);
-
-  function scrollFolders(direction: -1 | 1) {
-    listRef.current?.scrollBy({ left: direction * 118, behavior: "smooth" });
-    window.setTimeout(updateScrollState, 180);
-  }
+  const orderedGroups = useMemo(() => {
+    if (sort === "name") {
+      return [...groups].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const latestByGroup = new Map<string, number>();
+    notes.forEach((note, index) => {
+      if (note.groupId && !latestByGroup.has(note.groupId)) latestByGroup.set(note.groupId, index);
+    });
+    return [...groups].sort((a, b) => {
+      const aIndex = latestByGroup.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = latestByGroup.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return a.name.localeCompare(b.name);
+    });
+  }, [groups, notes, sort]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -405,68 +408,68 @@ function NoteFolders({
     setCreating(false);
   }
 
+  function select(groupId: string | null | "__all") {
+    onSelect(groupId);
+  }
+
+  function move(noteId: string, groupId: string | null) {
+    onMove(noteId, groupId);
+  }
+
+  function scroll(delta: number) {
+    listRef.current?.scrollBy({ top: delta, behavior: "smooth" });
+  }
+
   return (
-    <div className="note-folders">
-      <div className="note-folder-toolbar">
+    <aside className="note-folder-rail" ref={rootRef}>
+      <div className="note-folder-rail-header">
         <button
-          className="icon-button note-folder-scroll"
+          className={`icon-button note-folder-add ${creating ? "is-active" : ""}`}
           type="button"
-          onClick={() => scrollFolders(-1)}
-          disabled={!canScrollLeft}
-          title={t("notes.previousFolder")}
-          aria-label={t("notes.previousFolder")}
+          onClick={() => setCreating((value) => !value)}
+          title={t("notes.createFolder")}
+          aria-label={t("notes.createFolder")}
         >
-          <ChevronLeft size={13} />
+          <Plus size={13} />
         </button>
-        <div className="note-folder-list" ref={listRef} aria-label={t("notes.folders")}>
+      </div>
+      <div className="note-folder-scroll-row">
+        <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(-126)} aria-label={t("notes.previousFolder")}>
+          <ChevronUp size={13} />
+        </button>
+      </div>
+      <div className="note-folder-list" ref={listRef} aria-label={t("notes.folders")}>
           <DropFolderButton
             active={activeGroupId === "__all"}
             count={notes.length}
             icon="all"
             label={t("notes.all")}
-            onClick={() => onSelect("__all")}
+            onClick={() => select("__all")}
           />
           <DropFolderButton
             active={activeGroupId === null}
             count={notes.filter((note) => note.groupId === null).length}
             icon="folder"
             label={t("notes.ungrouped")}
-            onClick={() => onSelect(null)}
-            onDropNote={(id) => onMove(id, null)}
+            onClick={() => select(null)}
+            onDropNote={(id) => move(id, null)}
           />
-          {groups.map((group) => (
+          {orderedGroups.map((group) => (
             <DropFolderButton
               key={group.id}
               active={activeGroupId === group.id}
               count={notes.filter((note) => note.groupId === group.id).length}
               icon="folder"
               label={group.name}
-              onClick={() => onSelect(group.id)}
-              onDropNote={(id) => onMove(id, group.id)}
+              onClick={() => select(group.id)}
+              onDropNote={(id) => move(id, group.id)}
             />
           ))}
-        </div>
-        <div className="note-folder-controls">
-          <button
-            className="icon-button note-folder-scroll"
-            type="button"
-            onClick={() => scrollFolders(1)}
-            disabled={!canScrollRight}
-            title={t("notes.nextFolder")}
-            aria-label={t("notes.nextFolder")}
-          >
-            <ChevronRight size={13} />
-          </button>
-          <button
-            className={`icon-button note-folder-add ${creating ? "is-active" : ""}`}
-            type="button"
-            onClick={() => setCreating((value) => !value)}
-            title={t("notes.createFolder")}
-            aria-label={t("notes.createFolder")}
-          >
-            <Plus size={13} />
-          </button>
-        </div>
+      </div>
+      <div className="note-folder-scroll-row">
+        <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(126)} aria-label={t("notes.nextFolder")}>
+          <ChevronDown size={13} />
+        </button>
       </div>
       {creating && (
         <form className="note-folder-create" onSubmit={submit}>
@@ -490,7 +493,7 @@ function NoteFolders({
           </div>
         </form>
       )}
-    </div>
+    </aside>
   );
 }
 
@@ -551,6 +554,7 @@ function NoteComposer({
 export function NotesView() {
   const { notes, groups, loaded, addGroup, addNote, addAudioNote, moveNoteToGroup, updateNote, deleteNote } = useNotes();
   const [activeGroupId, setActiveGroupId] = useState<string | null | "__all">("__all");
+  const [folderSort, setFolderSort] = useState<NoteFolderSort>("recent");
   const [draft, setDraft] = useState("");
   const { t } = useLocale();
   const visibleNotes = useMemo(
@@ -558,6 +562,10 @@ export function NotesView() {
     [activeGroupId, notes],
   );
   const composerGroupId = activeGroupId === "__all" ? null : activeGroupId;
+
+  useEffect(() => {
+    commands.settings.getNoteFolderSort().then(setFolderSort).catch(() => setFolderSort("recent"));
+  }, []);
 
   function handleSubmit() {
     const body = draft.trim();
@@ -572,6 +580,7 @@ export function NotesView() {
         activeGroupId={activeGroupId}
         groups={groups}
         notes={notes}
+        sort={folderSort}
         onSelect={setActiveGroupId}
         onCreate={(name) => void addGroup(name)}
         onMove={(noteId, groupId) => void moveNoteToGroup(noteId, groupId)}

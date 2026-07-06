@@ -1,6 +1,21 @@
+use crate::audio_crypto;
 use crate::sync_log::{self, HlcClock};
-use rusqlite::{params, Connection, Row};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
+use std::fs;
+use std::path::Path;
+
+const MAX_AUDIO_BYTES: usize = 10 * 1024 * 1024;
+
+pub struct CreateAudioReminder<'a> {
+    pub profile_id: &'a str,
+    pub audio_dir: &'a Path,
+    pub audio_key: Option<&'a str>,
+    pub title: &'a str,
+    pub trigger_at_utc: &'a str,
+    pub base64_data: &'a str,
+}
 
 // Раздел 8 ТЗ: Reminder. Срабатывание/очередь/окно живут в alerts.rs —
 // этот модуль только данные.
@@ -9,6 +24,7 @@ use serde::Serialize;
 pub struct ReminderDto {
     pub id: String,
     pub title: String,
+    pub audio_path: Option<String>,
     pub trigger_at_utc: String,
     pub status: String,
 }
@@ -17,14 +33,15 @@ fn row_to_dto(row: &Row) -> rusqlite::Result<ReminderDto> {
     Ok(ReminderDto {
         id: row.get(0)?,
         title: row.get(1)?,
-        trigger_at_utc: row.get(2)?,
-        status: row.get(3)?,
+        audio_path: row.get(2)?,
+        trigger_at_utc: row.get(3)?,
+        status: row.get(4)?,
     })
 }
 
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<ReminderDto>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, trigger_at_utc, status FROM reminders ORDER BY trigger_at_utc ASC",
+        "SELECT id, title, audio_path, trigger_at_utc, status FROM reminders ORDER BY trigger_at_utc ASC",
     )?;
     let reminders = stmt.query_map([], row_to_dto)?.collect();
     reminders
@@ -61,7 +78,64 @@ pub fn create(
     Ok(ReminderDto {
         id,
         title: title.to_string(),
+        audio_path: None,
         trigger_at_utc: trigger_at_utc.to_string(),
+        status: "scheduled".to_string(),
+    })
+}
+
+pub fn create_audio(
+    conn: &mut Connection,
+    clock: &mut HlcClock,
+    request: CreateAudioReminder<'_>,
+) -> Result<ReminderDto, String> {
+    let bytes = STANDARD
+        .decode(request.base64_data)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_AUDIO_BYTES {
+        return Err(format!(
+            "аудиозапись слишком большая ({} МБ), максимум {} МБ",
+            bytes.len() / (1024 * 1024),
+            MAX_AUDIO_BYTES / (1024 * 1024)
+        ));
+    }
+    let to_write = match request.audio_key {
+        Some(key) => audio_crypto::encrypt(key, &bytes)?,
+        None => bytes,
+    };
+    fs::create_dir_all(request.audio_dir).map_err(|e| e.to_string())?;
+    let id = uuid::Uuid::now_v7().to_string();
+    let filename = format!("reminder-{id}.webm");
+    fs::write(request.audio_dir.join(&filename), &to_write).map_err(|e| e.to_string())?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO reminders (id, title, audio_path, trigger_at_utc, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, 'scheduled', datetime('now'))",
+        params![id, request.title, filename, request.trigger_at_utc],
+    )
+    .map_err(|e| e.to_string())?;
+    let hlc = clock.next(&tx).map_err(|e| e.to_string())?;
+    sync_log::record_operation(
+        &tx,
+        &hlc,
+        request.profile_id,
+        "reminder",
+        &id,
+        "create",
+        &serde_json::json!({
+            "title": request.title,
+            "triggerAtUtc": request.trigger_at_utc,
+            "audioPath": filename
+        }),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(ReminderDto {
+        id,
+        title: request.title.to_string(),
+        audio_path: Some(filename),
+        trigger_at_utc: request.trigger_at_utc.to_string(),
         status: "scheduled".to_string(),
     })
 }
@@ -71,7 +145,7 @@ pub fn create(
 // только ради проверки "наступило ли время".
 pub fn due(conn: &Connection) -> rusqlite::Result<Vec<ReminderDto>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, trigger_at_utc, status FROM reminders
+        "SELECT id, title, audio_path, trigger_at_utc, status FROM reminders
          WHERE status = 'scheduled' AND datetime(trigger_at_utc) <= datetime('now')
          ORDER BY trigger_at_utc ASC",
     )?;
@@ -92,6 +166,7 @@ pub fn mark_firing(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub fn acknowledge(
     conn: &mut Connection,
     clock: &mut HlcClock,
@@ -121,11 +196,22 @@ pub fn delete(
     conn: &mut Connection,
     clock: &mut HlcClock,
     profile_id: &str,
+    audio_dir: &Path,
     id: &str,
-) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
-    tx.execute("DELETE FROM reminders WHERE id = ?1", params![id])?;
-    let hlc = clock.next(&tx)?;
+) -> Result<(), String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let audio_path: Option<String> = tx
+        .query_row(
+            "SELECT audio_path FROM reminders WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+    tx.execute("DELETE FROM reminders WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    let hlc = clock.next(&tx).map_err(|e| e.to_string())?;
     sync_log::record_operation(
         &tx,
         &hlc,
@@ -134,8 +220,14 @@ pub fn delete(
         id,
         "delete",
         &serde_json::json!({}),
-    )?;
-    tx.commit()?;
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    if let Some(filename) = audio_path {
+        if let Err(e) = fs::remove_file(audio_dir.join(&filename)) {
+            eprintln!("reminders: не удалось удалить аудиофайл {filename}: {e}");
+        }
+    }
     Ok(())
 }
 
@@ -152,7 +244,7 @@ pub fn reschedule(
     let tx = conn.transaction()?;
     let dto = tx.query_row(
         "UPDATE reminders SET status = 'scheduled', trigger_at_utc = ?1 WHERE id = ?2
-         RETURNING id, title, trigger_at_utc, status",
+         RETURNING id, title, audio_path, trigger_at_utc, status",
         params![new_trigger_at_utc, id],
         row_to_dto,
     )?;
@@ -168,6 +260,27 @@ pub fn reschedule(
     )?;
     tx.commit()?;
     Ok(dto)
+}
+
+pub fn read_audio(
+    conn: &Connection,
+    audio_dir: &Path,
+    audio_key: Option<&str>,
+    reminder_id: &str,
+) -> Result<String, String> {
+    let filename: String = conn
+        .query_row(
+            "SELECT audio_path FROM reminders WHERE id = ?1 AND audio_path IS NOT NULL",
+            params![reminder_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "аудио для этого напоминания не найдено".to_string())?;
+    let raw = fs::read(audio_dir.join(filename)).map_err(|e| e.to_string())?;
+    let bytes = match audio_key {
+        Some(key) => audio_crypto::decrypt_if_needed(key, &raw)?,
+        None => raw,
+    };
+    Ok(STANDARD.encode(bytes))
 }
 
 // Раздел 11 ТЗ: Android-alarm нужен epoch-millis, а не строка. trigger_at_utc
@@ -229,6 +342,7 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     const PROFILE: &str = "profile-1";
+    const AUDIO_KEY: &str = "test-vault-key-hex";
 
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -236,6 +350,7 @@ mod tests {
             "CREATE TABLE reminders (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                audio_path TEXT,
                 trigger_at_utc TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'scheduled',
                 created_at TEXT NOT NULL
@@ -274,6 +389,10 @@ mod tests {
     fn test_clock() -> HlcClock {
         let conn = Connection::open_in_memory().unwrap();
         HlcClock::load(&conn, "test-device".to_string()).unwrap()
+    }
+
+    fn temp_audio_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("focusnook-reminder-audio-{}", uuid::Uuid::new_v4()))
     }
 
     fn iso_offset(delta: Duration, in_past: bool) -> String {
@@ -343,7 +462,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute(
             "CREATE TABLE reminders (
-                id TEXT PRIMARY KEY, title TEXT NOT NULL, trigger_at_utc TEXT NOT NULL,
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, audio_path TEXT, trigger_at_utc TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'scheduled', created_at TEXT NOT NULL
             )",
             [],
@@ -466,8 +585,49 @@ mod tests {
             "2030-01-01T10:00:00.000Z",
         )
         .unwrap();
-        delete(&mut conn, &mut clock, PROFILE, &reminder.id).unwrap();
+        delete(
+            &mut conn,
+            &mut clock,
+            PROFILE,
+            &std::env::temp_dir(),
+            &reminder.id,
+        )
+        .unwrap();
         assert!(list(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn audio_reminder_roundtrips_audio_and_deletes_the_file() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        let dir = temp_audio_dir();
+        let original = STANDARD.encode(b"voice reminder bytes");
+        let reminder = create_audio(
+            &mut conn,
+            &mut clock,
+            CreateAudioReminder {
+                profile_id: PROFILE,
+                audio_dir: &dir,
+                audio_key: Some(AUDIO_KEY),
+                title: "Голос",
+                trigger_at_utc: "2030-01-01T10:00:00.000Z",
+                base64_data: &original,
+            },
+        )
+        .unwrap();
+        let file_path = dir.join(reminder.audio_path.clone().unwrap());
+
+        assert_eq!(
+            read_audio(&conn, &dir, Some(AUDIO_KEY), &reminder.id).unwrap(),
+            original
+        );
+        assert!(file_path.exists());
+
+        delete(&mut conn, &mut clock, PROFILE, &dir, &reminder.id).unwrap();
+
+        assert!(!file_path.exists());
+        assert!(list(&conn).unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 
     #[test]

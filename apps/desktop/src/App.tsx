@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BellRing,
   CalendarDays,
   NotebookPen,
   Settings as SettingsIcon,
 } from "lucide-react";
-import { isAlertWindow } from "./shared/commands";
+import { commands, isAlertWindow, type FolderRailSide } from "./shared/commands";
 import { ThemeProvider } from "./shared/theme";
 import { LocaleProvider } from "./shared/locale";
 import { useLayerToggle, type ShortcutInfo } from "./shared/useLayerToggle";
@@ -71,51 +71,91 @@ interface DesktopShellProps {
   toggleLayer: () => void;
   shortcutInfo: ShortcutInfo | null;
   theme: ResolvedTheme;
+  folderRailSide: FolderRailSide;
 }
 
 // Desktop: тихий угловой оверлей (раздел 12 ТЗ) — настройки нарочно не
 // четвёртая вкладка, а ненавязчивый экран за иконкой в шапке.
-function DesktopShell({ front, toggleLayer, shortcutInfo, theme }: DesktopShellProps) {
+function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide }: DesktopShellProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
   const [showSettings, setShowSettings] = useState(false);
   const { profiles, activeProfileId, createProfile, switchProfile } = useProfiles();
   const mainTabs = useMainTabs();
 
   return (
-    <div className="overlay-shell">
-      <LiveBackground theme={theme} />
-      <OverlayHeader
-        front={front}
-        onToggleLayer={toggleLayer}
-        showSettings={showSettings}
-        onToggleSettings={() => setShowSettings((value) => !value)}
-        profiles={profiles}
-        activeProfileId={activeProfileId}
-        onSwitchProfile={switchProfile}
-        onCreateProfile={createProfile}
-      />
+    <div className="desktop-stage" data-folder-rail-side={folderRailSide}>
+      <div className="overlay-shell">
+        <LiveBackground theme={theme} />
+        <OverlayHeader
+          front={front}
+          onToggleLayer={toggleLayer}
+          showSettings={showSettings}
+          onToggleSettings={() => setShowSettings((value) => !value)}
+          profiles={profiles}
+          activeProfileId={activeProfileId}
+          onSwitchProfile={switchProfile}
+          onCreateProfile={createProfile}
+        />
 
-      {!showSettings && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
+        {!showSettings && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
 
-      <main className="body">
-        {showSettings ? (
-          <SettingsPanel
-            shortcutInfo={shortcutInfo}
-            onClose={() => setShowSettings(false)}
-            isDesktop
-          />
-        ) : (
-          <TabContent
-            key={activeProfileId}
-            tab={activeTab}
-            shortcutInfo={shortcutInfo}
-            onCloseSettings={() => {}}
-            isDesktop
-          />
-        )}
-      </main>
+        <main className="body">
+          {showSettings ? (
+            <SettingsPanel
+              shortcutInfo={shortcutInfo}
+              onClose={() => setShowSettings(false)}
+              isDesktop
+            />
+          ) : (
+            <TabContent
+              key={activeProfileId}
+              tab={activeTab}
+              shortcutInfo={shortcutInfo}
+              onCloseSettings={() => {}}
+              isDesktop
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
+}
+
+function useFolderRailSide(isDesktop: boolean): FolderRailSide {
+  const [side, setSide] = useState<FolderRailSide>("left");
+
+  useEffect(() => {
+    if (!isDesktop) return;
+
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    let intervalId: number | null = null;
+
+    function refreshSide() {
+      void commands.overlay.getFolderRailSide().then((nextSide) => {
+        if (!cancelled) setSide(nextSide);
+      });
+    }
+
+    refreshSide();
+    intervalId = window.setInterval(refreshSide, 350);
+    commands.overlay
+      .onFolderRailSideChanged((nextSide) => {
+        if (!cancelled) setSide(nextSide);
+      })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      unlisten?.();
+    };
+  }, [isDesktop]);
+
+  return side;
 }
 
 // Mobile: полноэкранное приложение, а не растянутый десктопный виджет —
@@ -163,9 +203,16 @@ function MobileShell({
 function Shell() {
   const { front, toggleLayer, shortcutInfo, isDesktop } = useLayerToggle();
   const { effective } = useTheme();
+  const folderRailSide = useFolderRailSide(isDesktop);
   useLiveBackgroundPointer(effective);
   return isDesktop ? (
-    <DesktopShell front={front} toggleLayer={toggleLayer} shortcutInfo={shortcutInfo} theme={effective} />
+    <DesktopShell
+      front={front}
+      toggleLayer={toggleLayer}
+      shortcutInfo={shortcutInfo}
+      theme={effective}
+      folderRailSide={folderRailSide}
+    />
   ) : (
     <MobileShell shortcutInfo={shortcutInfo} theme={effective} />
   );

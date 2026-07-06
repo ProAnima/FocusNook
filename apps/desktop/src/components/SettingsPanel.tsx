@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Activity, Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
-import { commands, type Locale, type SyncProvider } from "../shared/commands";
+import { commands, type Locale, type NoteFolderSort, type SyncProvider } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
 import { LOCALES, LOCALE_LABELS } from "../shared/translations";
 import { useLocale } from "../shared/useLocale";
@@ -198,6 +198,42 @@ function MicrophoneSection() {
         </div>
       </div>
       {testFailed && <p className="note-error">{t("settings.microphoneTestFailed")}</p>}
+    </div>
+  );
+}
+
+function NoteFoldersSection() {
+  const { t } = useLocale();
+  const [sort, setSort] = useState<NoteFolderSort>("recent");
+
+  useEffect(() => {
+    commands.settings.getNoteFolderSort().then(setSort).catch(() => setSort("recent"));
+  }, []);
+
+  async function select(nextSort: NoteFolderSort) {
+    setSort(nextSort);
+    await commands.settings.setNoteFolderSort(nextSort).catch(() => setSort(sort));
+  }
+
+  return (
+    <div className="settings-group">
+      <span className="settings-group-label">{t("settings.noteFolders")}</span>
+      <div className="settings-choice-grid" role="group" aria-label={t("settings.noteFolderSort")}>
+        <button
+          className={`preset-button ${sort === "recent" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => void select("recent")}
+        >
+          {t("settings.noteFolderSortRecent")}
+        </button>
+        <button
+          className={`preset-button ${sort === "name" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => void select("name")}
+        >
+          {t("settings.noteFolderSortName")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -511,6 +547,7 @@ export function SettingsPanel({
 
       <AppearanceSection mode={mode} setMode={setMode} />
       <LanguageSection />
+      <NoteFoldersSection />
       <MicrophoneSection />
       {/* "Запускать вместе с Windows" не имеет смысла на телефоне — раздел 11 ТЗ. */}
       {isDesktop && <AutostartSection />}

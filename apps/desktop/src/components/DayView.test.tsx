@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
-const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, deletePlanItem, listReminders } =
+const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, deletePlanItem, listReminders, onRemindersChanged } =
   vi.hoisted(() => ({
     list: vi.fn(),
     listRange: vi.fn(),
@@ -15,12 +15,13 @@ const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, move
     rollOverPending: vi.fn(),
     deletePlanItem: vi.fn(),
     listReminders: vi.fn(),
+    onRemindersChanged: vi.fn().mockResolvedValue(() => {}),
   }));
 
 vi.mock("../shared/commands", () => ({
   commands: {
     planItems: { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, delete: deletePlanItem },
-    reminders: { list: listReminders },
+    reminders: { list: listReminders, onChanged: onRemindersChanged },
   },
 }));
 

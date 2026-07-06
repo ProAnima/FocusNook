@@ -15,6 +15,8 @@ const {
   deleteNote,
   getMicrophoneDeviceId,
   setMicrophoneDeviceId,
+  getNoteFolderSort,
+  setNoteFolderSort,
 } = vi.hoisted(() => ({
   list: vi.fn(),
   listGroups: vi.fn(),
@@ -27,12 +29,14 @@ const {
   deleteNote: vi.fn(),
   getMicrophoneDeviceId: vi.fn(),
   setMicrophoneDeviceId: vi.fn(),
+  getNoteFolderSort: vi.fn(),
+  setNoteFolderSort: vi.fn(),
 }));
 
 vi.mock("../shared/commands", () => ({
   commands: {
     notes: { list, listGroups, createGroup, create, createAudio, getAudio, moveToGroup, update: updateNote, delete: deleteNote },
-    settings: { getMicrophoneDeviceId, setMicrophoneDeviceId },
+    settings: { getMicrophoneDeviceId, setMicrophoneDeviceId, getNoteFolderSort, setNoteFolderSort },
   },
 }));
 
@@ -57,9 +61,15 @@ beforeEach(() => {
   listGroups.mockResolvedValue([]);
   getMicrophoneDeviceId.mockResolvedValue(null);
   setMicrophoneDeviceId.mockResolvedValue(undefined);
+  getNoteFolderSort.mockResolvedValue("recent");
+  setNoteFolderSort.mockResolvedValue(undefined);
   URL.createObjectURL = vi.fn(() => "blob:mock-url");
   URL.revokeObjectURL = vi.fn();
 });
+
+async function openFolders() {
+  await screen.findByTitle("Все");
+}
 
 describe("NotesView", () => {
   it("loads and shows persisted notes", async () => {
@@ -81,7 +91,8 @@ describe("NotesView", () => {
     const user = userEvent.setup();
     render(<NotesView />);
 
-    await user.click(await screen.findByText("Проект"));
+    await openFolders();
+    await user.click(await screen.findByTitle("Проект"));
     await user.type(screen.getByPlaceholderText("Новая заметка..."), "Новая заметка{Enter}");
 
     expect(create).toHaveBeenCalledWith("Новая заметка", "g1");
@@ -93,11 +104,12 @@ describe("NotesView", () => {
     const user = userEvent.setup();
     render(<NotesView />);
 
+    await openFolders();
     await user.click(await screen.findByTitle("Создать папку"));
     await user.type(await screen.findByPlaceholderText("Новая папка..."), "Идеи{Enter}");
 
     expect(createGroup).toHaveBeenCalledWith("Идеи");
-    expect(await screen.findByText("Идеи")).toBeInTheDocument();
+    expect(await screen.findByTitle("Идеи")).toBeInTheDocument();
   });
 
   it("moves a note to a folder with drag and drop", async () => {
@@ -107,7 +119,8 @@ describe("NotesView", () => {
     render(<NotesView />);
 
     const row = await screen.findByText("Перетащи меня");
-    const folder = await screen.findByText("Архив");
+    await openFolders();
+    const folder = await screen.findByTitle("Архив");
     const dataTransfer = {
       data: "",
       effectAllowed: "",
@@ -119,7 +132,7 @@ describe("NotesView", () => {
       },
     };
 
-    fireEvent.dragStart(row.closest(".note-item")!.querySelector(".note-drag-handle")!, { dataTransfer });
+    fireEvent.dragStart(row.closest(".note-item")!, { dataTransfer });
     fireEvent.drop(folder.closest("button")!, { dataTransfer });
 
     await waitFor(() => expect(moveToGroup).toHaveBeenCalledWith("n1", "g1"));

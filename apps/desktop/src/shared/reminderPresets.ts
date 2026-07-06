@@ -19,9 +19,9 @@ function tomorrowAt(hour: number, minute: number): string {
 }
 
 // Полноценный natural-language parser — Iteration 3 ТЗ (universal quick
-// capture). Для быстрых случаев — пресеты, для остального — "Своё время"
-// с обычным datetime-local вводом (RemindersView). Функция, а не статический
-// массив — подписи пресетов зависят от locale (раздел 22 ТЗ, i18n).
+// capture). Для быстрых случаев — пресеты, для остального — календарь и
+// mouse-first выбор времени в RemindersView. Функция, а не статический массив —
+// подписи пресетов зависят от locale (раздел 22 ТЗ, i18n).
 export function getReminderPresets(locale: Locale): ReminderPreset[] {
   return [
     { key: "15m", label: translate(locale, "reminders.preset15m"), computeTriggerAtUtc: () => inMinutes(15) },
@@ -32,14 +32,6 @@ export function getReminderPresets(locale: Locale): ReminderPreset[] {
       computeTriggerAtUtc: () => tomorrowAt(9, 0),
     },
   ];
-}
-
-// Значение для min= у <input type="datetime-local">: локальное время без
-// секунд/таймзоны — ровно то, что этот тип input ожидает и производит.
-export function nowAsDatetimeLocal(): string {
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 export function formatReminderTime(triggerAtUtc: string, locale: Locale): string {

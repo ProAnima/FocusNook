@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 
@@ -56,6 +56,7 @@ export interface NoteGroup {
 export interface Reminder {
   id: string;
   title: string;
+  audioPath: string | null;
   triggerAtUtc: string;
   status: string;
 }
@@ -72,7 +73,7 @@ export interface ProfilesResponse {
 }
 
 // Раздел 14 ТЗ, sync — только аутентификация в этом шаге (см. oauth.rs).
-export type SyncProvider = "google_drive" | "yandex_disk";
+export type SyncProvider = "google_drive" | "yandex_disk"; export type NoteFolderSort = "recent" | "name"; export type FolderRailSide = "left" | "right";
 
 export interface ConnectionStatus {
   connected: boolean;
@@ -100,6 +101,24 @@ function settingsStore() {
   return storePromise;
 }
 
+async function resolveFolderRailSide(positionX?: number): Promise<FolderRailSide> {
+  try {
+    const win = getCurrentWindow();
+    const [position, size, monitor] = await Promise.all([
+      positionX === undefined ? win.outerPosition() : Promise.resolve({ x: positionX }),
+      win.outerSize(),
+      currentMonitor(),
+    ]);
+    const workArea = monitor?.workArea;
+    if (!workArea) return "left";
+    const windowCenter = position.x + size.width / 2;
+    const monitorCenter = workArea.position.x + workArea.size.width / 2;
+    return windowCenter < monitorCenter ? "right" : "left";
+  } catch {
+    return "left";
+  }
+}
+
 // Components call this instead of `invoke`/plugin APIs directly (раздел 12 ТЗ).
 export const commands = {
   overlay: {
@@ -121,6 +140,14 @@ export const commands = {
       // Прячет в tray (см. lib.rs::CloseRequested) — реально выходит только
       // пункт трея "Выход".
       await getCurrentWindow().close();
+    },
+    getFolderRailSide: resolveFolderRailSide,
+    async onFolderRailSideChanged(handler: (side: FolderRailSide) => void) {
+      try {
+        return await getCurrentWindow().onMoved(({ payload }) => void resolveFolderRailSide(payload.x).then(handler));
+      } catch {
+        return () => {};
+      }
     },
   },
   profiles: {
@@ -193,14 +220,23 @@ export const commands = {
     },
   },
   reminders: {
+    onChanged(handler: () => void) {
+      return listen("reminders-changed", handler);
+    },
     async list(): Promise<Reminder[]> {
       return invoke<Reminder[]>("list_reminders");
     },
     async create(title: string, triggerAtUtc: string): Promise<Reminder> {
       return invoke<Reminder>("create_reminder", { title, triggerAtUtc });
     },
+    async createAudio(title: string, triggerAtUtc: string, audioBase64: string): Promise<Reminder> {
+      return invoke<Reminder>("create_audio_reminder", { request: { title, triggerAtUtc, audioBase64 } });
+    },
     async getCurrentAlert(): Promise<Reminder | null> {
       return invoke<Reminder | null>("get_current_alert");
+    },
+    async getAudio(id: string): Promise<string> {
+      return invoke<string>("get_reminder_audio", { id });
     },
     async acknowledge(id: string) {
       await invoke("acknowledge_reminder", { id });
@@ -249,6 +285,15 @@ export const commands = {
     async setMicrophoneDeviceId(deviceId: string | null) {
       const store = await settingsStore();
       await store.set("microphoneDeviceId", deviceId);
+    },
+    async getNoteFolderSort(): Promise<NoteFolderSort> {
+      const store = await settingsStore();
+      const value = await store.get<NoteFolderSort>("noteFolderSort");
+      return value === "name" ? "name" : "recent";
+    },
+    async setNoteFolderSort(value: NoteFolderSort) {
+      const store = await settingsStore();
+      await store.set("noteFolderSort", value);
     },
   },
   diagnostics: {

@@ -12,6 +12,8 @@ const {
   setLocale,
   getMicrophoneDeviceId,
   setMicrophoneDeviceId,
+  getNoteFolderSort,
+  setNoteFolderSort,
   exportDiagnostics,
   syncReadiness,
   syncStatus,
@@ -28,6 +30,8 @@ const {
   setLocale: vi.fn().mockResolvedValue(undefined),
   getMicrophoneDeviceId: vi.fn().mockResolvedValue(null),
   setMicrophoneDeviceId: vi.fn().mockResolvedValue(undefined),
+  getNoteFolderSort: vi.fn().mockResolvedValue("recent"),
+  setNoteFolderSort: vi.fn().mockResolvedValue(undefined),
   exportDiagnostics: vi.fn(),
   syncReadiness: vi.fn().mockResolvedValue({
     profileIdHash: "profilehash",
@@ -46,7 +50,16 @@ const {
 
 vi.mock("../shared/commands", () => ({
   commands: {
-    settings: { getAutostart, setAutostart, getLocale, setLocale, getMicrophoneDeviceId, setMicrophoneDeviceId },
+    settings: {
+      getAutostart,
+      setAutostart,
+      getLocale,
+      setLocale,
+      getMicrophoneDeviceId,
+      setMicrophoneDeviceId,
+      getNoteFolderSort,
+      setNoteFolderSort,
+    },
     diagnostics: { export: exportDiagnostics },
     sync: { readiness: syncReadiness, status: syncStatus, start: syncStart, disconnect: syncDisconnect },
     serverSync: { status: serverSyncStatus, connect: serverSyncConnect, disconnect: serverSyncDisconnect },
@@ -131,6 +144,15 @@ describe("SettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Язык" }));
 
     expect(screen.getAllByRole("option")).toHaveLength(10);
+  });
+
+  it("stores the note folder sorting preference", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.click(await screen.findByText("По имени"));
+
+    expect(setNoteFolderSort).toHaveBeenCalledWith("name");
   });
 
   it("shows the saved path after exporting diagnostics", async () => {

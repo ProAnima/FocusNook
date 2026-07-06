@@ -3,17 +3,21 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReminderAlert } from "./ReminderAlert";
 
-const { getCurrentAlert, acknowledge, snooze } = vi.hoisted(() => ({
+const { getCurrentAlert, getAudio, acknowledge, snooze, stopChime } = vi.hoisted(() => ({
   getCurrentAlert: vi.fn(),
+  getAudio: vi.fn(),
   acknowledge: vi.fn().mockResolvedValue(undefined),
   snooze: vi.fn().mockResolvedValue(undefined),
+  stopChime: vi.fn(),
 }));
 
 vi.mock("../shared/commands", () => ({
-  commands: { reminders: { getCurrentAlert, acknowledge, snooze } },
+  commands: { reminders: { getCurrentAlert, getAudio, acknowledge, snooze } },
 }));
 
-vi.mock("../shared/playChime", () => ({ playChime: vi.fn() }));
+vi.mock("../shared/playChime", () => ({
+  playChime: vi.fn(() => ({ done: Promise.resolve(), stop: stopChime })),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -42,9 +46,10 @@ describe("ReminderAlert", () => {
     await user.click(screen.getByText("Услышал"));
 
     expect(acknowledge).toHaveBeenCalledWith("1");
+    expect(stopChime).toHaveBeenCalled();
   });
 
-  it("snoozes for 5 minutes with a computed future timestamp", async () => {
+  it("snoozes for 10 minutes with a computed future timestamp", async () => {
     getCurrentAlert.mockResolvedValue({
       id: "2",
       title: "Позвонить",
@@ -55,7 +60,7 @@ describe("ReminderAlert", () => {
     render(<ReminderAlert />);
 
     await screen.findByText("Позвонить");
-    await user.click(screen.getByText("5 мин"));
+    await user.click(screen.getByText("10 мин"));
 
     expect(snooze).toHaveBeenCalledWith("2", expect.any(String));
   });
@@ -71,5 +76,34 @@ describe("ReminderAlert", () => {
 
     const primary = await screen.findByText("Услышал");
     await vi.waitFor(() => expect(primary).toHaveFocus());
+  });
+
+  it("plays voice reminder audio after the chime", async () => {
+    getCurrentAlert.mockResolvedValue({
+      id: "4",
+      title: "Голосовое напоминание",
+      audioPath: "reminder-4.webm",
+      triggerAtUtc: "2026-07-04T18:30:00.000Z",
+      status: "firing",
+    });
+    getAudio.mockResolvedValue("dm9pY2U=");
+    const playAudio = vi.fn().mockResolvedValue(undefined);
+    class MockAudio {
+      currentTime = 0;
+      src = "";
+      pause = vi.fn();
+      play = playAudio;
+
+      constructor(src: string) {
+        this.src = src;
+      }
+    }
+    vi.stubGlobal("Audio", MockAudio);
+
+    render(<ReminderAlert />);
+
+    await screen.findByText("Голосовое напоминание");
+    await vi.waitFor(() => expect(getAudio).toHaveBeenCalledWith("4"));
+    expect(playAudio).toHaveBeenCalled();
   });
 });

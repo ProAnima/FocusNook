@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   CalendarClock,
   CalendarDays,
@@ -12,24 +12,19 @@ import {
   Trash2,
 } from "lucide-react";
 import { usePlanItems } from "../shared/usePlanItems";
-import { commands, type PlanItem, type Reminder } from "../shared/commands";
-import { INTL_LOCALE_TAG } from "../shared/translations";
+import { commands, type PlanItem } from "../shared/commands";
 import { useLocale } from "../shared/useLocale";
 import { useReminders } from "../shared/useReminders";
-import { useOutsideClick } from "../shared/useOutsideClick";
 import {
   addDays,
-  addMonths,
   formatDayLabel,
-  formatMonthLabel,
-  monthGrid,
   monthKeyFromDateKey,
   monthRange,
-  parseDateKey,
-  reminderDateKey,
   todayDateKey,
 } from "../shared/dateKeys";
+import { buildCalendarMarks } from "../shared/calendarMarks";
 import { EmptyState } from "./EmptyState";
+import { CalendarPopover } from "./CalendarPopover";
 
 interface PlanItemActions {
   onToggleDone: (id: string) => void;
@@ -37,33 +32,6 @@ interface PlanItemActions {
   onToggleDeferred: (id: string) => void;
   onMoveNextDay: (id: string) => void;
   onDelete: (id: string) => void;
-}
-
-interface CalendarMarks {
-  tasks: number;
-  reminders: number;
-}
-
-function buildWeekdayLabels(localeTag: string): string[] {
-  return Array.from({ length: 7 }, (_, index) =>
-    new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(new Date(2026, 0, 5 + index)),
-  );
-}
-
-function mergeMarks(items: PlanItem[], reminders: Reminder[]): Record<string, CalendarMarks> {
-  const marks: Record<string, CalendarMarks> = {};
-  for (const item of items) {
-    const mark = marks[item.planDate] ?? { tasks: 0, reminders: 0 };
-    mark.tasks += 1;
-    marks[item.planDate] = mark;
-  }
-  for (const reminder of reminders) {
-    const key = reminderDateKey(reminder.triggerAtUtc);
-    const mark = marks[key] ?? { tasks: 0, reminders: 0 };
-    mark.reminders += 1;
-    marks[key] = mark;
-  }
-  return marks;
 }
 
 function useCalendarItems(monthKey: string) {
@@ -213,77 +181,14 @@ function DayHeader({
   );
 }
 
-function CalendarPopover({
-  monthKey,
-  selectedDate,
-  reminders,
-  onMonthChange,
-  onSelectDate,
-  onClose,
-}: {
-  monthKey: string;
-  selectedDate: string;
-  reminders: Reminder[];
-  onMonthChange: (monthKey: string) => void;
-  onSelectDate: (dateKey: string) => void;
-  onClose: () => void;
-}) {
-  const { t, locale } = useLocale();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const calendarItems = useCalendarItems(monthKey);
-  const days = useMemo(() => monthGrid(monthKey), [monthKey]);
-  const marks = useMemo(() => mergeMarks(calendarItems, reminders), [calendarItems, reminders]);
-  const localeTag = INTL_LOCALE_TAG[locale];
-  useOutsideClick(rootRef, onClose);
-
-  return (
-    <div className="calendar-popover" ref={rootRef}>
-      <div className="calendar-header">
-        <button className="icon-button" type="button" onClick={() => onMonthChange(addMonths(monthKey, -1))} title={t("day.previous")} aria-label={t("day.previous")}>
-          <ChevronLeft size={14} />
-        </button>
-        <span>{formatMonthLabel(monthKey, locale)}</span>
-        <button className="icon-button" type="button" onClick={() => onMonthChange(addMonths(monthKey, 1))} title={t("day.next")} aria-label={t("day.next")}>
-          <ChevronRight size={14} />
-        </button>
-      </div>
-      <div className="calendar-grid">
-        {buildWeekdayLabels(localeTag).map((label) => (
-          <span key={label} className="calendar-weekday">
-            {label}
-          </span>
-        ))}
-        {days.map((dateKey) => {
-          const mark = marks[dateKey];
-          const isOtherMonth = !dateKey.startsWith(monthKey);
-          const isToday = dateKey === todayDateKey();
-          return (
-            <button
-              key={dateKey}
-              className={`calendar-day ${isOtherMonth ? "is-muted" : ""} ${dateKey === selectedDate ? "is-selected" : ""} ${isToday ? "is-today" : ""}`}
-              type="button"
-              onClick={() => onSelectDate(dateKey)}
-              title={`${formatDayLabel(dateKey, locale)}${mark?.tasks ? `, ${t("day.calendarTasks")}: ${mark.tasks}` : ""}${mark?.reminders ? `, ${t("day.calendarReminders")}: ${mark.reminders}` : ""}`}
-            >
-              <span>{parseDateKey(dateKey).getDate()}</span>
-              <span className="calendar-marks">
-                {mark?.tasks ? <span className="calendar-dot is-task" /> : null}
-                {mark?.reminders ? <span className="calendar-dot is-reminder" /> : null}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function DayView() {
   const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => monthKeyFromDateKey(todayDateKey()));
   const plan = usePlanItems(selectedDate, selectedDate === todayDateKey());
   const { reminders } = useReminders();
+  const calendarItems = useCalendarItems(calendarMonth);
+  const calendarMarks = useMemo(() => buildCalendarMarks(calendarItems, reminders), [calendarItems, reminders]);
   const [draft, setDraft] = useState("");
   const doneCount = plan.items.filter((item) => item.status === "done").length;
 
@@ -322,7 +227,7 @@ export function DayView() {
         <CalendarPopover
           monthKey={calendarMonth}
           selectedDate={selectedDate}
-          reminders={reminders}
+          marks={calendarMarks}
           onMonthChange={setCalendarMonth}
           onSelectDate={(dateKey) => {
             changeDate(dateKey);
