@@ -112,6 +112,33 @@ describe("NotesView", () => {
     expect(await screen.findByTitle("Идеи")).toBeInTheDocument();
   });
 
+  it("selects folders through the mobile bottom sheet", async () => {
+    listGroups.mockResolvedValue([{ id: "g1", name: "Мобильное" }]);
+    create.mockResolvedValue(note({ id: "2", body: "Заметка с телефона", groupId: "g1" }));
+    const user = userEvent.setup();
+    render(<NotesView isDesktop={false} />);
+
+    await user.click(await screen.findByRole("button", { name: "Папки" }));
+    await user.click(await screen.findByRole("button", { name: /Мобильное/ }));
+    await user.type(screen.getByPlaceholderText("Новая заметка..."), "Заметка с телефона{Enter}");
+
+    expect(create).toHaveBeenCalledWith("Заметка с телефона", "g1");
+  });
+
+  it("closes the mobile folder sheet with escape", async () => {
+    const user = userEvent.setup();
+    render(<NotesView isDesktop={false} />);
+
+    await user.click(await screen.findByRole("button", { name: "Папки" }));
+    expect(screen.getByRole("dialog", { name: "Папки" })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Папки" })).not.toBeInTheDocument());
+    expect(document.body.style.overflow).toBe("");
+  });
+
   it("moves a note to a folder with drag and drop", async () => {
     list.mockResolvedValue([note({ id: "n1", body: "Перетащи меня" })]);
     listGroups.mockResolvedValue([{ id: "g1", name: "Архив" }]);

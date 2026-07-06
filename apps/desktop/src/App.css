@@ -37,7 +37,7 @@ textarea {
   --desktop-external-left: 120px;
   --desktop-shadow-gutter: 14px;
   --desktop-shell-width: 380px;
-  --folder-rail-offset: 44px;
+  --folder-rail-offset: 60px;
 }
 
 .desktop-stage {
@@ -742,6 +742,11 @@ textarea {
   pointer-events: auto;
 }
 
+.note-folder-mobile-toggle,
+.note-folder-mobile-layer {
+  display: none;
+}
+
 .desktop-stage[data-folder-rail-side="right"] .note-folder-rail {
   right: calc(-1 * var(--folder-rail-offset));
   left: auto;
@@ -974,8 +979,8 @@ textarea {
 }
 
 .desktop-stage[data-folder-rail-side="right"] .note-folder-create {
-  right: auto;
-  left: 42px;
+  right: 42px;
+  left: auto;
 }
 
 .note-folder-create input {
@@ -2461,16 +2466,199 @@ textarea {
 }
 
 .mobile-shell .notes-shell {
-  padding-left: 46px;
+  gap: 12px;
+  padding-left: 0;
 }
 
 .mobile-shell .note-folder-rail {
-  left: 0;
-  width: 38px;
+  position: static;
+  width: 100%;
+  max-height: none;
+  display: block;
+  z-index: 20;
+}
+
+.mobile-shell .note-folder-rail-header,
+.mobile-shell .note-folder-scroll-row,
+.mobile-shell .note-folder-list,
+.mobile-shell .note-folder-rail > .note-folder-create:not(.note-folder-create-mobile) {
+  display: none;
 }
 
 .mobile-shell .note-folder-label {
   display: none;
+}
+
+.mobile-shell .note-folder-mobile-toggle {
+  min-height: 46px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--control-bg) 88%, transparent);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.mobile-shell .note-folder-mobile-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-toggle small {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.mobile-shell .note-folder-mobile-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: rgba(5, 7, 14, 0.42);
+  backdrop-filter: blur(7px);
+}
+
+.mobile-shell .note-folder-mobile-sheet {
+  width: min(100%, 520px);
+  max-height: min(74vh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 72%, rgba(255, 255, 255, 0.14));
+  background: color-mix(in srgb, #12172b 88%, var(--surface-gradient) 12%);
+  box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.mobile-shell .note-folder-mobile-grip {
+  width: 42px;
+  height: 4px;
+  align-self: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 48%, transparent);
+}
+
+.mobile-shell .note-folder-mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0 0;
+}
+
+.mobile-shell .note-folder-mobile-header div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mobile-shell .note-folder-mobile-header strong {
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.mobile-shell .note-folder-mobile-header span {
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-shell .note-folder-create-mobile {
+  position: static;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  padding: 7px 8px 7px 10px;
+  border-radius: 10px;
+}
+
+.mobile-shell .note-folder-mobile-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 1px 0;
+}
+
+.mobile-shell .note-folder-mobile-item {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--control-bg) 84%, transparent);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.mobile-shell .note-folder-mobile-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-item small {
+  min-width: 26px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.mobile-shell .note-folder-mobile-item.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.mobile-shell .note-folder-mobile-item.is-active small {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-shell .note-list {
+  gap: 8px;
+  padding-bottom: 2px;
 }
 
 .mobile-shell .note-folder-create {

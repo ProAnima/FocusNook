@@ -56,7 +56,7 @@ function TabContent({
     case "day":
       return <DayView />;
     case "notes":
-      return <NotesView />;
+      return <NotesView isDesktop={isDesktop} />;
     case "reminders":
       return <RemindersView />;
     case "settings":

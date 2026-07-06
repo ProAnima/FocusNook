@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import {
   Check,
   ChevronDown,
@@ -26,6 +26,7 @@ import { useOutsideClick } from "../shared/useOutsideClick";
 import { EmptyState } from "./EmptyState";
 
 const NOTE_DRAG_TYPE = "application/x-focusnook-note-id";
+type FolderSelection = string | null | "__all";
 
 function base64ToBlobUrl(base64: string): string {
   const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
@@ -359,17 +360,19 @@ function DropFolderButton({
 function NoteFolders({
   activeGroupId,
   groups,
+  isDesktop,
   notes,
   sort,
   onSelect,
   onCreate,
   onMove,
 }: {
-  activeGroupId: string | null | "__all";
+  activeGroupId: FolderSelection;
   groups: NoteGroup[];
+  isDesktop: boolean;
   notes: Note[];
   sort: NoteFolderSort;
-  onSelect: (groupId: string | null | "__all") => void;
+  onSelect: (groupId: FolderSelection) => void;
   onCreate: (name: string) => void;
   onMove: (noteId: string, groupId: string | null) => void;
 }) {
@@ -377,6 +380,7 @@ function NoteFolders({
   const listRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { t } = useLocale();
   const orderedGroups = useMemo(() => {
     if (sort === "name") {
@@ -393,6 +397,52 @@ function NoteFolders({
       return a.name.localeCompare(b.name);
     });
   }, [groups, notes, sort]);
+  const folderOptions = useMemo(
+    () => [
+      {
+        key: "__all",
+        groupId: "__all" as FolderSelection,
+        icon: "all" as const,
+        label: t("notes.all"),
+        count: notes.length,
+      },
+      {
+        key: "__ungrouped",
+        groupId: null,
+        icon: "folder" as const,
+        label: t("notes.ungrouped"),
+        count: notes.filter((note) => note.groupId === null).length,
+      },
+      ...orderedGroups.map((group) => ({
+        key: group.id,
+        groupId: group.id as FolderSelection,
+        icon: "folder" as const,
+        label: group.name,
+        count: notes.filter((note) => note.groupId === group.id).length,
+      })),
+    ],
+    [notes, orderedGroups, t],
+  );
+  const activeFolder = folderOptions.find((option) => option.groupId === activeGroupId) ?? folderOptions[0];
+  const closeMobileSheet = useCallback(() => {
+    setDraft("");
+    setCreating(false);
+    setMobileOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDesktop || !mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMobileSheet();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeMobileSheet, isDesktop, mobileOpen]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -408,7 +458,7 @@ function NoteFolders({
     setCreating(false);
   }
 
-  function select(groupId: string | null | "__all") {
+  function select(groupId: FolderSelection) {
     onSelect(groupId);
   }
 
@@ -420,58 +470,64 @@ function NoteFolders({
     listRef.current?.scrollBy({ top: delta, behavior: "smooth" });
   }
 
+  function selectMobile(groupId: FolderSelection) {
+    select(groupId);
+    closeMobileSheet();
+  }
+
   return (
     <aside className="note-folder-rail" ref={rootRef}>
-      <div className="note-folder-rail-header">
+      {isDesktop ? (
+        <>
+          <div className="note-folder-rail-header">
+            <button
+              className={`icon-button note-folder-add ${creating ? "is-active" : ""}`}
+              type="button"
+              onClick={() => setCreating((value) => !value)}
+              title={t("notes.createFolder")}
+              aria-label={t("notes.createFolder")}
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+          <div className="note-folder-scroll-row">
+            <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(-126)} aria-label={t("notes.previousFolder")}>
+              <ChevronUp size={13} />
+            </button>
+          </div>
+          <div className="note-folder-list" ref={listRef} aria-label={t("notes.folders")}>
+            {folderOptions.map((option) => (
+              <DropFolderButton
+                key={option.key}
+                active={activeGroupId === option.groupId}
+                count={option.count}
+                icon={option.icon}
+                label={option.label}
+                onClick={() => select(option.groupId)}
+                onDropNote={option.groupId === "__all" ? undefined : (id) => move(id, option.groupId)}
+              />
+            ))}
+          </div>
+          <div className="note-folder-scroll-row">
+            <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(126)} aria-label={t("notes.nextFolder")}>
+              <ChevronDown size={13} />
+            </button>
+          </div>
+        </>
+      ) : (
         <button
-          className={`icon-button note-folder-add ${creating ? "is-active" : ""}`}
+          className="note-folder-mobile-toggle"
           type="button"
-          onClick={() => setCreating((value) => !value)}
-          title={t("notes.createFolder")}
-          aria-label={t("notes.createFolder")}
+          onClick={() => setMobileOpen(true)}
+          aria-label={t("notes.folders")}
         >
-          <Plus size={13} />
+          {activeFolder.icon === "all" ? <Inbox size={17} /> : <FolderOpen size={17} />}
+          <span>{activeFolder.label}</span>
+          <small>{activeFolder.count}</small>
+          <ChevronUp size={16} />
         </button>
-      </div>
-      <div className="note-folder-scroll-row">
-        <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(-126)} aria-label={t("notes.previousFolder")}>
-          <ChevronUp size={13} />
-        </button>
-      </div>
-      <div className="note-folder-list" ref={listRef} aria-label={t("notes.folders")}>
-          <DropFolderButton
-            active={activeGroupId === "__all"}
-            count={notes.length}
-            icon="all"
-            label={t("notes.all")}
-            onClick={() => select("__all")}
-          />
-          <DropFolderButton
-            active={activeGroupId === null}
-            count={notes.filter((note) => note.groupId === null).length}
-            icon="folder"
-            label={t("notes.ungrouped")}
-            onClick={() => select(null)}
-            onDropNote={(id) => move(id, null)}
-          />
-          {orderedGroups.map((group) => (
-            <DropFolderButton
-              key={group.id}
-              active={activeGroupId === group.id}
-              count={notes.filter((note) => note.groupId === group.id).length}
-              icon="folder"
-              label={group.name}
-              onClick={() => select(group.id)}
-              onDropNote={(id) => move(id, group.id)}
-            />
-          ))}
-      </div>
-      <div className="note-folder-scroll-row">
-        <button className="icon-button note-folder-scroll" type="button" onClick={() => scroll(126)} aria-label={t("notes.nextFolder")}>
-          <ChevronDown size={13} />
-        </button>
-      </div>
-      {creating && (
+      )}
+      {isDesktop && creating && (
         <form className="note-folder-create" onSubmit={submit}>
           <Folder size={13} />
           <input
@@ -492,6 +548,75 @@ function NoteFolders({
             </button>
           </div>
         </form>
+      )}
+      {!isDesktop && mobileOpen && (
+        <div className="note-folder-mobile-layer" role="presentation" onClick={closeMobileSheet}>
+          <section
+            className="note-folder-mobile-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("notes.folders")}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="note-folder-mobile-grip" />
+            <header className="note-folder-mobile-header">
+              <div>
+                <strong>{t("notes.folders")}</strong>
+                <span>{activeFolder.label}</span>
+              </div>
+              <div className="note-folder-mobile-actions">
+                <button
+                  className={`icon-button note-folder-add ${creating ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => setCreating((value) => !value)}
+                  title={t("notes.createFolder")}
+                  aria-label={t("notes.createFolder")}
+                >
+                  <Plus size={16} />
+                </button>
+                <button className="icon-button" type="button" onClick={closeMobileSheet} aria-label={t("header.close")}>
+                  <X size={17} />
+                </button>
+              </div>
+            </header>
+            {creating && (
+              <form className="note-folder-create note-folder-create-mobile" onSubmit={submit}>
+                <Folder size={15} />
+                <input
+                  autoFocus
+                  placeholder={t("notes.newFolder")}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") cancelCreate();
+                  }}
+                />
+                <div className="note-folder-create-actions">
+                  <button className="icon-button" type="submit" disabled={!draft.trim()} title={t("common.save")} aria-label={t("common.save")}>
+                    <Check size={14} />
+                  </button>
+                  <button className="icon-button" type="button" onClick={cancelCreate} title={t("common.cancel")} aria-label={t("common.cancel")}>
+                    <X size={14} />
+                  </button>
+                </div>
+              </form>
+            )}
+            <div className="note-folder-mobile-list">
+              {folderOptions.map((option) => (
+                <button
+                  key={option.key}
+                  className={`note-folder-mobile-item ${activeGroupId === option.groupId ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => selectMobile(option.groupId)}
+                >
+                  {option.icon === "all" ? <Inbox size={18} /> : <Folder size={18} />}
+                  <span>{option.label}</span>
+                  <small>{option.count}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
       )}
     </aside>
   );
@@ -551,9 +676,9 @@ function NoteComposer({
   );
 }
 
-export function NotesView() {
+export function NotesView({ isDesktop = true }: { isDesktop?: boolean }) {
   const { notes, groups, loaded, addGroup, addNote, addAudioNote, moveNoteToGroup, updateNote, deleteNote } = useNotes();
-  const [activeGroupId, setActiveGroupId] = useState<string | null | "__all">("__all");
+  const [activeGroupId, setActiveGroupId] = useState<FolderSelection>("__all");
   const [folderSort, setFolderSort] = useState<NoteFolderSort>("recent");
   const [draft, setDraft] = useState("");
   const { t } = useLocale();
@@ -579,6 +704,7 @@ export function NotesView() {
       <NoteFolders
         activeGroupId={activeGroupId}
         groups={groups}
+        isDesktop={isDesktop}
         notes={notes}
         sort={folderSort}
         onSelect={setActiveGroupId}
