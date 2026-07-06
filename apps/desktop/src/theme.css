@@ -20,6 +20,8 @@
   --warning-soft-bg: rgba(184, 114, 10, 0.12);
   --danger: #c23b3b;
   --danger-soft-bg: rgba(194, 59, 59, 0.12);
+  --shader-opacity: 0;
+  --bg-blob-opacity: 0;
 }
 
 [data-theme="dark"] {
@@ -41,6 +43,8 @@
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
   --danger: #e8685f;
   --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --shader-opacity: 0;
+  --bg-blob-opacity: 0;
 }
 
 /* "Живые" темы: та же структура переменных, что у dark (тёмная база — на ней
@@ -50,93 +54,217 @@
    переиспользуют значения dark — это одна и та же "тёмная семья" тем, и
    разъезжаться в семантике (что green/red означают) смысла нет. */
 [data-theme="aurora"] {
-  --surface-gradient: linear-gradient(165deg, #232049 0%, #121026 100%);
-  --surface-border: rgba(155, 140, 255, 0.14);
+  --surface-gradient: linear-gradient(165deg, #202448 0%, #101321 100%);
+  --surface-border: rgba(139, 125, 255, 0.18);
   --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --text-primary: #f2f0fb;
-  --text-secondary: #b9b3d9;
-  --text-tertiary: #7d76a3;
-  --divider: rgba(255, 255, 255, 0.06);
-  --control-bg: rgba(255, 255, 255, 0.05);
-  --control-bg-hover: rgba(255, 255, 255, 0.1);
-  --accent: #9b8cff;
-  --accent-soft-bg: rgba(155, 140, 255, 0.16);
-  --accent-soft-border: rgba(155, 140, 255, 0.42);
+  --text-primary: #f3f5ff;
+  --text-secondary: #bcc4df;
+  --text-tertiary: #818aa9;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #9e93ff;
+  --accent-soft-bg: rgba(124, 144, 255, 0.17);
+  --accent-soft-border: rgba(139, 125, 255, 0.44);
   --success: #63d29b;
   --success-soft-bg: rgba(99, 210, 155, 0.14);
   --warning: #f2b463;
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
   --danger: #e8685f;
   --danger-soft-bg: rgba(232, 104, 95, 0.16);
-  --bg-blob-a: #6d5bff;
-  --bg-blob-b: #2fd6c0;
+  --bg-blob-a: #8b7dff;
+  --bg-blob-b: #34e0ba;
+  --bg-blob-opacity: 0.3;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.42;
+  --shader-blend-mode: screen;
 }
 
 [data-theme="sunset"] {
-  --surface-gradient: linear-gradient(165deg, #33203a 0%, #170f1c 100%);
-  --surface-border: rgba(255, 154, 108, 0.14);
+  --surface-gradient: linear-gradient(165deg, #2d1f32 0%, #15121d 100%);
+  --surface-border: rgba(255, 123, 111, 0.18);
   --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --text-primary: #fdf0ea;
-  --text-secondary: #dcb2a8;
-  --text-tertiary: #9c7268;
-  --divider: rgba(255, 255, 255, 0.06);
-  --control-bg: rgba(255, 255, 255, 0.05);
-  --control-bg-hover: rgba(255, 255, 255, 0.1);
-  --accent: #ff8a5c;
-  --accent-soft-bg: rgba(255, 138, 92, 0.16);
-  --accent-soft-border: rgba(255, 138, 92, 0.42);
+  --text-primary: #fff4ee;
+  --text-secondary: #d9bab0;
+  --text-tertiary: #967b86;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #ff977d;
+  --accent-soft-bg: rgba(255, 123, 111, 0.17);
+  --accent-soft-border: rgba(255, 151, 125, 0.44);
   --success: #63d29b;
   --success-soft-bg: rgba(99, 210, 155, 0.14);
   --warning: #f2b463;
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
   --danger: #e8685f;
   --danger-soft-bg: rgba(232, 104, 95, 0.16);
-  --bg-blob-a: #ff7a59;
-  --bg-blob-b: #ffc857;
+  --bg-blob-a: #ff7b6f;
+  --bg-blob-b: #ffd166;
+  --bg-blob-opacity: 0.26;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.36;
+  --shader-blend-mode: screen;
 }
 
 [data-theme="ocean"] {
-  --surface-gradient: linear-gradient(165deg, #123244 0%, #0a1822 100%);
-  --surface-border: rgba(79, 209, 224, 0.14);
+  --surface-gradient: linear-gradient(165deg, #123044 0%, #081722 100%);
+  --surface-border: rgba(49, 182, 214, 0.18);
   --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --text-primary: #eaf6f8;
-  --text-secondary: #a7c9d1;
-  --text-tertiary: #6a8e97;
-  --divider: rgba(255, 255, 255, 0.06);
-  --control-bg: rgba(255, 255, 255, 0.05);
-  --control-bg-hover: rgba(255, 255, 255, 0.1);
-  --accent: #4fd1e0;
-  --accent-soft-bg: rgba(79, 209, 224, 0.16);
-  --accent-soft-border: rgba(79, 209, 224, 0.42);
+  --text-primary: #eefaff;
+  --text-secondary: #abcbd5;
+  --text-tertiary: #7193a0;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #5ad7e8;
+  --accent-soft-bg: rgba(49, 182, 214, 0.17);
+  --accent-soft-border: rgba(90, 215, 232, 0.42);
   --success: #63d29b;
   --success-soft-bg: rgba(99, 210, 155, 0.14);
   --warning: #f2b463;
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
   --danger: #e8685f;
   --danger-soft-bg: rgba(232, 104, 95, 0.16);
-  --bg-blob-a: #2ea8c9;
-  --bg-blob-b: #1fe0a8;
+  --bg-blob-a: #31b6d6;
+  --bg-blob-b: #27e2aa;
+  --bg-blob-opacity: 0.27;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.38;
+  --shader-blend-mode: screen;
 }
 
 [data-theme="forest"] {
-  --surface-gradient: linear-gradient(165deg, #1c3020 0%, #0e1811 100%);
-  --surface-border: rgba(127, 206, 106, 0.14);
+  --surface-gradient: linear-gradient(165deg, #1b2d20 0%, #0d1711 100%);
+  --surface-border: rgba(103, 201, 122, 0.17);
   --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --text-primary: #eef5ec;
-  --text-secondary: #b7c9b3;
-  --text-tertiary: #7c8f78;
-  --divider: rgba(255, 255, 255, 0.06);
-  --control-bg: rgba(255, 255, 255, 0.05);
-  --control-bg-hover: rgba(255, 255, 255, 0.1);
-  --accent: #7fce6a;
-  --accent-soft-bg: rgba(127, 206, 106, 0.16);
-  --accent-soft-border: rgba(127, 206, 106, 0.42);
+  --text-primary: #f0f7ef;
+  --text-secondary: #b7cab7;
+  --text-tertiary: #7d917f;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #8bd779;
+  --accent-soft-bg: rgba(103, 201, 122, 0.17);
+  --accent-soft-border: rgba(139, 215, 121, 0.4);
   --success: #63d29b;
   --success-soft-bg: rgba(99, 210, 155, 0.14);
   --warning: #f2b463;
   --warning-soft-bg: rgba(242, 180, 99, 0.14);
   --danger: #e8685f;
   --danger-soft-bg: rgba(232, 104, 95, 0.16);
-  --bg-blob-a: #4f9e5c;
-  --bg-blob-b: #c9a24a;
+  --bg-blob-a: #67c97a;
+  --bg-blob-b: #d7bb61;
+  --bg-blob-opacity: 0.25;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.34;
+  --shader-blend-mode: screen;
+}
+
+[data-theme="glacier"] {
+  --surface-gradient: linear-gradient(165deg, #17253a 0%, #0b1520 100%);
+  --surface-border: rgba(168, 231, 255, 0.17);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #f2fbff;
+  --text-secondary: #b4cfe0;
+  --text-tertiary: #7895a6;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #a8e7ff;
+  --accent-soft-bg: rgba(168, 231, 255, 0.15);
+  --accent-soft-border: rgba(168, 231, 255, 0.38);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #a8e7ff;
+  --bg-blob-b: #74a8ff;
+  --bg-blob-opacity: 0.23;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.32;
+  --shader-blend-mode: screen;
+}
+
+[data-theme="nebula"] {
+  --surface-gradient: linear-gradient(165deg, #241d3f 0%, #111122 100%);
+  --surface-border: rgba(194, 119, 255, 0.17);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #f7f2ff;
+  --text-secondary: #cab9df;
+  --text-tertiary: #8f7ba5;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #c98cff;
+  --accent-soft-bg: rgba(194, 119, 255, 0.16);
+  --accent-soft-border: rgba(194, 119, 255, 0.4);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #c277ff;
+  --bg-blob-b: #5fd0ff;
+  --bg-blob-opacity: 0.27;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.39;
+  --shader-blend-mode: screen;
+}
+
+[data-theme="ember"] {
+  --surface-gradient: linear-gradient(165deg, #301c20 0%, #151114 100%);
+  --surface-border: rgba(255, 115, 95, 0.17);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #fff3ee;
+  --text-secondary: #d8bcb4;
+  --text-tertiary: #987e7b;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #ff9a72;
+  --accent-soft-bg: rgba(255, 115, 95, 0.16);
+  --accent-soft-border: rgba(255, 154, 114, 0.4);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #ff735f;
+  --bg-blob-b: #ffc247;
+  --bg-blob-opacity: 0.24;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.34;
+  --shader-blend-mode: screen;
+}
+
+[data-theme="prism"] {
+  --surface-gradient: linear-gradient(165deg, #1a2335 0%, #10131e 100%);
+  --surface-border: rgba(102, 240, 209, 0.16);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --text-primary: #f1fbfb;
+  --text-secondary: #b7c8d7;
+  --text-tertiary: #7d8ea3;
+  --divider: rgba(255, 255, 255, 0.065);
+  --control-bg: rgba(255, 255, 255, 0.055);
+  --control-bg-hover: rgba(255, 255, 255, 0.11);
+  --accent: #66f0d1;
+  --accent-soft-bg: rgba(102, 240, 209, 0.14);
+  --accent-soft-border: rgba(102, 240, 209, 0.36);
+  --success: #63d29b;
+  --success-soft-bg: rgba(99, 210, 155, 0.14);
+  --warning: #f2b463;
+  --warning-soft-bg: rgba(242, 180, 99, 0.14);
+  --danger: #e8685f;
+  --danger-soft-bg: rgba(232, 104, 95, 0.16);
+  --bg-blob-a: #66f0d1;
+  --bg-blob-b: #ff78c8;
+  --bg-blob-opacity: 0.28;
+  --bg-blob-blend: screen;
+  --shader-opacity: 0.37;
+  --shader-blend-mode: screen;
 }

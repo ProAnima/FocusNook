@@ -36,7 +36,7 @@ function attachHandlers(
 
 // Раздел 16 ТЗ: явный старт/стоп записи, никакой фоновой или автоматической
 // записи — пользователь всегда видит активную запись и сам её завершает.
-export function useAudioRecorder(onRecorded: (base64: string) => void) {
+export function useAudioRecorder(onRecorded: (base64: string) => void, deviceId: string | null = null) {
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -58,7 +58,8 @@ export function useAudioRecorder(onRecorded: (base64: string) => void) {
   const start = useCallback(async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audio = deviceId ? { deviceId: { exact: deviceId } } : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio });
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       attachHandlers(recorder, stream, chunksRef.current, onRecorded);
@@ -69,7 +70,7 @@ export function useAudioRecorder(onRecorded: (base64: string) => void) {
     } catch {
       setError(t("notes.micUnavailable"));
     }
-  }, [onRecorded, stopRecording, t]);
+  }, [deviceId, onRecorded, stopRecording, t]);
 
   // Размонтирование во время активной записи (переключение вкладки/профиля)
   // не должно оставлять висящий MediaRecorder с открытым потоком микрофона.

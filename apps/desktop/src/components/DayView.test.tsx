@@ -3,98 +3,92 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
-const { list, create, toggleDone, cycleProgress, toggleDeferred, deletePlanItem } = vi.hoisted(() => ({
-  list: vi.fn(),
-  create: vi.fn(),
-  toggleDone: vi.fn(),
-  cycleProgress: vi.fn(),
-  toggleDeferred: vi.fn(),
-  deletePlanItem: vi.fn(),
-}));
+const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, deletePlanItem, listReminders } =
+  vi.hoisted(() => ({
+    list: vi.fn(),
+    listRange: vi.fn(),
+    create: vi.fn(),
+    toggleDone: vi.fn(),
+    cycleProgress: vi.fn(),
+    toggleDeferred: vi.fn(),
+    moveToDate: vi.fn(),
+    rollOverPending: vi.fn(),
+    deletePlanItem: vi.fn(),
+    listReminders: vi.fn(),
+  }));
 
 vi.mock("../shared/commands", () => ({
   commands: {
-    planItems: { list, create, toggleDone, cycleProgress, toggleDeferred, delete: deletePlanItem },
+    planItems: { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, delete: deletePlanItem },
+    reminders: { list: listReminders },
   },
 }));
 
+function item(overrides = {}) {
+  return {
+    id: "1",
+    title: "Задача",
+    status: "open",
+    progressPercent: null,
+    planDate: "2026-07-06",
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  list.mockResolvedValue([]);
+  listRange.mockResolvedValue([]);
+  rollOverPending.mockResolvedValue(0);
+  listReminders.mockResolvedValue([]);
 });
 
 describe("DayView", () => {
   it("loads persisted items and shows the done count", async () => {
     list.mockResolvedValue([
-      { id: "1", title: "Проверить рендер", status: "open", progressPercent: null },
-      { id: "2", title: "Готово", status: "done", progressPercent: null },
+      item({ id: "1", title: "Проверить рендер" }),
+      item({ id: "2", title: "Готово", status: "done" }),
     ]);
     render(<DayView />);
 
     expect(await screen.findByText("Проверить рендер")).toBeInTheDocument();
     expect(screen.getByText("1/2")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
   });
 
   it("shows an empty state when there are no items", async () => {
-    list.mockResolvedValue([]);
     render(<DayView />);
 
-    expect(
-      await screen.findByText("На сегодня пока ничего не запланировано"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("На сегодня пока ничего не запланировано")).toBeInTheDocument();
   });
 
   it("adds a new item through the quick-add form", async () => {
-    list.mockResolvedValue([]);
-    create.mockResolvedValue({
-      id: "3",
-      title: "Новое дело",
-      status: "open",
-      progressPercent: null,
-    });
+    create.mockResolvedValue(item({ id: "3", title: "Новое дело" }));
     const user = userEvent.setup();
     render(<DayView />);
 
     await screen.findByText("На сегодня пока ничего не запланировано");
-    await user.type(
-      screen.getByPlaceholderText("Добавить дело..."),
-      "Новое дело{Enter}",
-    );
+    await user.type(screen.getByPlaceholderText("Добавить дело..."), "Новое дело{Enter}");
 
-    expect(create).toHaveBeenCalledWith("Новое дело");
+    expect(create).toHaveBeenCalledWith("Новое дело", expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
     expect(await screen.findByText("Новое дело")).toBeInTheDocument();
   });
 
   it("marks an item done when its checkbox is clicked", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: "Задача", status: "open", progressPercent: null },
-    ]);
-    toggleDone.mockResolvedValue({
-      id: "1",
-      title: "Задача",
-      status: "done",
-      progressPercent: null,
-    });
+    list.mockResolvedValue([item()]);
+    toggleDone.mockResolvedValue(item({ status: "done" }));
     const user = userEvent.setup();
     render(<DayView />);
 
-    await user.click(
-      await screen.findByRole("button", { name: "Отметить выполненным" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Отметить выполненным" }));
 
     expect(toggleDone).toHaveBeenCalledWith("1");
     expect(await screen.findByText("1/1")).toBeInTheDocument();
   });
 
   it("steps progress forward when the partial button is clicked", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: "Задача", status: "open", progressPercent: null },
-    ]);
-    cycleProgress.mockResolvedValue({
-      id: "1",
-      title: "Задача",
-      status: "partial",
-      progressPercent: 25,
-    });
+    list.mockResolvedValue([item()]);
+    cycleProgress.mockResolvedValue(item({ status: "partial", progressPercent: 25 }));
     const user = userEvent.setup();
     render(<DayView />);
 
@@ -104,16 +98,21 @@ describe("DayView", () => {
     expect(await screen.findByText("25%")).toBeInTheDocument();
   });
 
+  it("marks a 75 percent item done when progress is clicked", async () => {
+    list.mockResolvedValue([item({ status: "partial", progressPercent: 75 })]);
+    cycleProgress.mockResolvedValue(item({ status: "done", progressPercent: null }));
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByText("75%"));
+
+    expect(cycleProgress).toHaveBeenCalledWith("1");
+    expect(await screen.findByText("1/1")).toBeInTheDocument();
+  });
+
   it("defers an item and can bring it back", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: "Задача", status: "open", progressPercent: null },
-    ]);
-    toggleDeferred.mockResolvedValue({
-      id: "1",
-      title: "Задача",
-      status: "deferred",
-      progressPercent: null,
-    });
+    list.mockResolvedValue([item()]);
+    toggleDeferred.mockResolvedValue(item({ status: "deferred" }));
     const user = userEvent.setup();
     render(<DayView />);
 
@@ -123,10 +122,32 @@ describe("DayView", () => {
     expect(await screen.findByTitle("Вернуть в работу")).toBeInTheDocument();
   });
 
+  it("moves an unfinished item to the next day", async () => {
+    list.mockResolvedValue([item()]);
+    moveToDate.mockResolvedValue(item({ planDate: "2026-07-07" }));
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await screen.findByText("Задача");
+    await user.click(screen.getByTitle("Перенести на следующий день"));
+
+    expect(moveToDate).toHaveBeenCalledWith("1", expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+    expect(screen.queryByText("Задача")).not.toBeInTheDocument();
+  });
+
+  it("opens the calendar and selects another day", async () => {
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(screen.getByTitle("Открыть календарь"));
+    expect(listRange).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+    await user.click(screen.getAllByRole("button", { name: "7" })[0]);
+
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
   it("removes an item from the list when deleted", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: "Задача", status: "open", progressPercent: null },
-    ]);
+    list.mockResolvedValue([item()]);
     deletePlanItem.mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<DayView />);

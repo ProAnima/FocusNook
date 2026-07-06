@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { ThemeMode } from "./commands";
+import { LIVE_THEME_MODES, type LiveThemeMode } from "./themeCatalog";
 
 export type { ThemeMode };
 
@@ -7,9 +8,9 @@ export type { ThemeMode };
 // effective совпадает с mode один-в-один.
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 
-export const LIVE_THEMES: readonly ResolvedTheme[] = ["aurora", "sunset", "ocean", "forest"];
+export const LIVE_THEMES: readonly LiveThemeMode[] = LIVE_THEME_MODES;
 
-export function isLiveTheme(theme: ResolvedTheme): boolean {
+export function isLiveTheme(theme: ResolvedTheme): theme is LiveThemeMode {
   return (LIVE_THEMES as readonly string[]).includes(theme);
 }
 

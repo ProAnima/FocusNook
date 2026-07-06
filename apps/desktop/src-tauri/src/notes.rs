@@ -21,6 +21,14 @@ pub struct NoteDto {
     pub body: String,
     pub kind: String,
     pub audio_path: Option<String>,
+    pub group_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteGroupDto {
+    pub id: String,
+    pub name: String,
 }
 
 fn row_to_dto(row: &Row) -> rusqlite::Result<NoteDto> {
@@ -30,14 +38,58 @@ fn row_to_dto(row: &Row) -> rusqlite::Result<NoteDto> {
         body: row.get(2)?,
         kind: row.get(3)?,
         audio_path: row.get(4)?,
+        group_id: row.get(5)?,
     })
 }
 
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<NoteDto>> {
-    let mut stmt = conn
-        .prepare("SELECT id, title, body, kind, audio_path FROM notes ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, title, body, kind, audio_path, group_id FROM notes ORDER BY created_at DESC",
+    )?;
     let notes = stmt.query_map([], row_to_dto)?.collect();
     notes
+}
+
+pub fn list_groups(conn: &Connection) -> rusqlite::Result<Vec<NoteGroupDto>> {
+    let mut stmt = conn.prepare("SELECT id, name FROM note_groups ORDER BY created_at, name")?;
+    let groups = stmt
+        .query_map([], |row| {
+            Ok(NoteGroupDto {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(groups)
+}
+
+pub fn create_group(
+    conn: &mut Connection,
+    clock: &mut HlcClock,
+    profile_id: &str,
+    name: &str,
+) -> rusqlite::Result<NoteGroupDto> {
+    let tx = conn.transaction()?;
+    let id = uuid::Uuid::now_v7().to_string();
+    tx.execute(
+        "INSERT INTO note_groups (id, name, created_at) VALUES (?1, ?2, datetime('now'))",
+        params![id, name],
+    )?;
+    let hlc = clock.next(&tx)?;
+    sync_log::record_operation(
+        &tx,
+        &hlc,
+        profile_id,
+        "note_group",
+        &id,
+        "create",
+        &serde_json::json!({ "name": name }),
+    )?;
+    tx.commit()?;
+    Ok(NoteGroupDto {
+        id,
+        name: name.to_string(),
+    })
 }
 
 // Раздел 9 ТЗ, Iteration 2 (первый локальный шаг): мутация и запись в
@@ -48,13 +100,14 @@ pub fn create(
     clock: &mut HlcClock,
     profile_id: &str,
     body: &str,
+    group_id: Option<&str>,
 ) -> rusqlite::Result<NoteDto> {
     let tx = conn.transaction()?;
     let id = uuid::Uuid::now_v7().to_string();
     tx.execute(
-        "INSERT INTO notes (id, title, body, kind, created_at)
-         VALUES (?1, NULL, ?2, 'text', datetime('now'))",
-        params![id, body],
+        "INSERT INTO notes (id, title, body, kind, group_id, created_at)
+         VALUES (?1, NULL, ?2, 'text', ?3, datetime('now'))",
+        params![id, body, group_id],
     )?;
     let hlc = clock.next(&tx)?;
     sync_log::record_operation(
@@ -64,7 +117,7 @@ pub fn create(
         "note",
         &id,
         "create",
-        &serde_json::json!({ "body": body, "kind": "text" }),
+        &serde_json::json!({ "body": body, "kind": "text", "groupId": group_id }),
     )?;
     tx.commit()?;
     Ok(NoteDto {
@@ -73,6 +126,7 @@ pub fn create(
         body: body.to_string(),
         kind: "text".to_string(),
         audio_path: None,
+        group_id: group_id.map(str::to_string),
     })
 }
 
@@ -101,6 +155,7 @@ pub fn create_audio(
     audio_dir: &Path,
     audio_key: Option<&str>,
     base64_data: &str,
+    group_id: Option<&str>,
 ) -> Result<NoteDto, String> {
     let bytes = STANDARD.decode(base64_data).map_err(|e| e.to_string())?;
     if bytes.len() > MAX_AUDIO_BYTES {
@@ -121,9 +176,9 @@ pub fn create_audio(
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute(
-        "INSERT INTO notes (id, title, body, kind, audio_path, created_at)
-         VALUES (?1, NULL, '', 'audio', ?2, datetime('now'))",
-        params![id, filename],
+        "INSERT INTO notes (id, title, body, kind, audio_path, group_id, created_at)
+         VALUES (?1, NULL, '', 'audio', ?2, ?3, datetime('now'))",
+        params![id, filename, group_id],
     )
     .map_err(|e| e.to_string())?;
     let hlc = clock.next(&tx).map_err(|e| e.to_string())?;
@@ -134,7 +189,7 @@ pub fn create_audio(
         "note",
         &id,
         "create",
-        &serde_json::json!({ "kind": "audio", "audioPath": filename }),
+        &serde_json::json!({ "kind": "audio", "audioPath": filename, "groupId": group_id }),
     )
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -144,7 +199,39 @@ pub fn create_audio(
         body: String::new(),
         kind: "audio".to_string(),
         audio_path: Some(filename),
+        group_id: group_id.map(str::to_string),
     })
+}
+
+pub fn move_to_group(
+    conn: &mut Connection,
+    clock: &mut HlcClock,
+    profile_id: &str,
+    id: &str,
+    group_id: Option<&str>,
+) -> rusqlite::Result<NoteDto> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE notes SET group_id = ?1 WHERE id = ?2",
+        params![group_id, id],
+    )?;
+    let hlc = clock.next(&tx)?;
+    sync_log::record_operation(
+        &tx,
+        &hlc,
+        profile_id,
+        "note",
+        id,
+        "update",
+        &serde_json::json!({ "groupId": group_id }),
+    )?;
+    let dto = tx.query_row(
+        "SELECT id, title, body, kind, audio_path, group_id FROM notes WHERE id = ?1",
+        params![id],
+        row_to_dto,
+    )?;
+    tx.commit()?;
+    Ok(dto)
 }
 
 // Путь берётся из БД по id заметки, а не принимается напрямую от фронтенда —
@@ -156,6 +243,37 @@ pub fn create_audio(
 // (это не новые файлы, а старые на том же диске), так что различать
 // "старый/новый" должна сама audio_crypto по метке, а не эта функция по
 // внешним признакам.
+pub fn update_body(
+    conn: &mut Connection,
+    clock: &mut HlcClock,
+    profile_id: &str,
+    id: &str,
+    body: &str,
+) -> rusqlite::Result<NoteDto> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE notes SET body = ?1 WHERE id = ?2 AND kind != 'audio'",
+        params![body, id],
+    )?;
+    let hlc = clock.next(&tx)?;
+    sync_log::record_operation(
+        &tx,
+        &hlc,
+        profile_id,
+        "note",
+        id,
+        "update",
+        &serde_json::json!({ "body": body }),
+    )?;
+    let dto = tx.query_row(
+        "SELECT id, title, body, kind, audio_path, group_id FROM notes WHERE id = ?1",
+        params![id],
+        row_to_dto,
+    )?;
+    tx.commit()?;
+    Ok(dto)
+}
+
 pub fn read_audio(
     conn: &Connection,
     audio_dir: &Path,
@@ -241,6 +359,16 @@ mod tests {
                 body TEXT NOT NULL,
                 kind TEXT NOT NULL DEFAULT 'text',
                 audio_path TEXT,
+                group_id TEXT,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE note_groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )",
             [],
@@ -287,7 +415,7 @@ mod tests {
     fn create_and_list_text_note() {
         let mut conn = setup_conn();
         let mut clock = test_clock();
-        let created = create(&mut conn, &mut clock, PROFILE, "hello").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "hello", None).unwrap();
         assert_eq!(created.kind, "text");
         assert_eq!(created.audio_path, None);
 
@@ -300,7 +428,7 @@ mod tests {
     fn create_writes_a_matching_operation_log_row() {
         let mut conn = setup_conn();
         let mut clock = test_clock();
-        let created = create(&mut conn, &mut clock, PROFILE, "hello").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "hello", None).unwrap();
 
         let (op, patch): (String, String) = conn
             .query_row(
@@ -319,6 +447,40 @@ mod tests {
     // микрофону, а кликать внутри нативного Tauri-окна нечем. base64 не
     // различает "настоящее аудио" и любые другие байты, так что синтетические
     // байты здесь дают ту же гарантию, что и реальная запись с микрофона.
+    #[test]
+    fn groups_can_be_created_and_notes_can_move_between_them() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        let group = create_group(&mut conn, &mut clock, PROFILE, "Ideas").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "hello", None).unwrap();
+
+        let moved =
+            move_to_group(&mut conn, &mut clock, PROFILE, &created.id, Some(&group.id)).unwrap();
+
+        assert_eq!(list_groups(&conn).unwrap()[0].name, "Ideas");
+        assert_eq!(moved.group_id, Some(group.id));
+    }
+
+    #[test]
+    fn update_body_changes_text_note_and_logs_patch() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        let created = create(&mut conn, &mut clock, PROFILE, "draft", None).unwrap();
+
+        let updated = update_body(&mut conn, &mut clock, PROFILE, &created.id, "final").unwrap();
+
+        assert_eq!(updated.body, "final");
+        let patch: String = conn
+            .query_row(
+                "SELECT patch FROM sync_operations WHERE entity_id = ?1 ORDER BY hlc DESC LIMIT 1",
+                params![created.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let patch: serde_json::Value = serde_json::from_str(&patch).unwrap();
+        assert_eq!(patch["body"], "final");
+    }
+
     const AUDIO_KEY: &str = "test-vault-key-hex";
 
     #[test]
@@ -335,6 +497,7 @@ mod tests {
             &dir,
             Some(AUDIO_KEY),
             &original,
+            None,
         )
         .unwrap();
         assert_eq!(created.kind, "audio");
@@ -364,6 +527,7 @@ mod tests {
             &dir,
             Some(AUDIO_KEY),
             &original,
+            None,
         )
         .unwrap();
         let filename = created.audio_path.unwrap();
@@ -391,7 +555,8 @@ mod tests {
         let dir = temp_audio_dir();
         let original = STANDARD.encode(b"fake audio bytes");
 
-        let created = create_audio(&mut conn, &mut clock, PROFILE, &dir, None, &original).unwrap();
+        let created =
+            create_audio(&mut conn, &mut clock, PROFILE, &dir, None, &original, None).unwrap();
         let read_back = read_audio(&conn, &dir, None, &created.id).unwrap();
         assert_eq!(read_back, original);
 
@@ -408,7 +573,7 @@ mod tests {
         let dir = temp_audio_dir();
         std::fs::create_dir_all(&dir).unwrap();
         let legacy_bytes = b"legacy plaintext webm, written before encryption existed";
-        let created = create(&mut conn, &mut clock, PROFILE, "").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "", None).unwrap();
         std::fs::write(dir.join("legacy.webm"), legacy_bytes).unwrap();
         conn.execute(
             "UPDATE notes SET kind = 'audio', audio_path = 'legacy.webm' WHERE id = ?1",
@@ -436,6 +601,7 @@ mod tests {
             &dir,
             Some(AUDIO_KEY),
             &too_big,
+            None,
         );
         assert!(result.is_err());
         assert!(
@@ -449,7 +615,7 @@ mod tests {
     fn read_audio_fails_for_a_text_note() {
         let mut conn = setup_conn();
         let mut clock = test_clock();
-        let created = create(&mut conn, &mut clock, PROFILE, "no audio here").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "no audio here", None).unwrap();
         assert!(read_audio(&conn, &std::env::temp_dir(), Some(AUDIO_KEY), &created.id).is_err());
     }
 
@@ -457,7 +623,7 @@ mod tests {
     fn delete_removes_the_row() {
         let mut conn = setup_conn();
         let mut clock = test_clock();
-        let created = create(&mut conn, &mut clock, PROFILE, "temp").unwrap();
+        let created = create(&mut conn, &mut clock, PROFILE, "temp", None).unwrap();
         delete(
             &mut conn,
             &mut clock,
@@ -484,6 +650,7 @@ mod tests {
             &dir,
             Some(AUDIO_KEY),
             &original,
+            None,
         )
         .unwrap();
         let file_path = dir.join(created.audio_path.clone().unwrap());

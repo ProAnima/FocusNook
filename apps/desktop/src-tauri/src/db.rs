@@ -12,6 +12,12 @@ const MIGRATIONS: &[&str] = &[
     title TEXT NOT NULL,
     status TEXT NOT NULL,
     progress_percent INTEGER,
+    plan_date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)",
+    "CREATE TABLE IF NOT EXISTS note_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
     created_at TEXT NOT NULL
 )",
     "CREATE TABLE IF NOT EXISTS notes (
@@ -217,7 +223,9 @@ pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
     for migration in MIGRATIONS {
         conn.execute(migration, []).map_err(|e| e.to_string())?;
     }
+    ensure_plan_items_plan_date_column(&conn)?;
     ensure_notes_audio_column(&conn)?;
+    ensure_notes_group_column(&conn)?;
     Ok(conn)
 }
 
@@ -226,6 +234,37 @@ pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
 // шаги), поэтому добавление колонки идёт отдельно и проверяет PRAGMA
 // table_info, чтобы ALTER TABLE не падал на "duplicate column" при повторном
 // запуске уже мигрировавшей базы.
+fn ensure_plan_items_plan_date_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(plan_items)")
+        .map_err(|e| e.to_string())?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    let has_column = columns.iter().any(|name| name == "plan_date");
+    if !has_column {
+        conn.execute("ALTER TABLE plan_items ADD COLUMN plan_date TEXT", [])
+            .map_err(|e| e.to_string())?;
+        let source = if columns.iter().any(|name| name == "created_at") {
+            "COALESCE(NULLIF(date(created_at), ''), date('now'))"
+        } else {
+            "date('now')"
+        };
+        conn.execute(
+            &format!(
+                "UPDATE plan_items
+                 SET plan_date = {source}
+                 WHERE plan_date IS NULL OR plan_date = ''"
+            ),
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn ensure_notes_audio_column(conn: &Connection) -> Result<(), String> {
     let mut stmt = conn
         .prepare("PRAGMA table_info(notes)")
@@ -237,6 +276,22 @@ fn ensure_notes_audio_column(conn: &Connection) -> Result<(), String> {
         .any(|name| name == "audio_path");
     if !has_column {
         conn.execute("ALTER TABLE notes ADD COLUMN audio_path TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_notes_group_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(notes)")
+        .map_err(|e| e.to_string())?;
+    let has_column = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .any(|name| name == "group_id");
+    if !has_column {
+        conn.execute("ALTER TABLE notes ADD COLUMN group_id TEXT", [])
             .map_err(|e| e.to_string())?;
     }
     Ok(())

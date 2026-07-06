@@ -13,12 +13,16 @@ export type ThemeMode =
   | "aurora"
   | "sunset"
   | "ocean"
-  | "forest";
+  | "forest"
+  | "glacier"
+  | "nebula"
+  | "ember"
+  | "prism";
 
 // Раздел 22 ТЗ: "i18n ru/en минимум, структура под 10 языков" — Locale как
 // союз-тип (не string) специально узкий, чтобы TypeScript сам не давал
 // пропустить перевод новой строки при добавлении языка (см. shared/translations.ts).
-export type Locale = "ru" | "en";
+export type Locale = "ru" | "en" | "es" | "de" | "fr" | "pt" | "zh" | "ja" | "ko" | "hi";
 
 export interface ShortcutInfo {
   shortcut: string;
@@ -32,6 +36,7 @@ export interface PlanItem {
   title: string;
   status: PlanItemStatus;
   progressPercent: number | null;
+  planDate: string;
 }
 
 export interface Note {
@@ -40,6 +45,12 @@ export interface Note {
   body: string;
   kind: "text" | "audio" | "transcript" | "audio_with_transcript";
   audioPath: string | null;
+  groupId: string | null;
+}
+
+export interface NoteGroup {
+  id: string;
+  name: string;
 }
 
 export interface Reminder {
@@ -111,11 +122,14 @@ export const commands = {
     },
   },
   planItems: {
-    async list(): Promise<PlanItem[]> {
-      return invoke<PlanItem[]>("list_plan_items");
+    async list(planDate: string): Promise<PlanItem[]> {
+      return invoke<PlanItem[]>("list_plan_items", { planDate });
     },
-    async create(title: string): Promise<PlanItem> {
-      return invoke<PlanItem>("create_plan_item", { title });
+    async listRange(startDate: string, endDate: string): Promise<PlanItem[]> {
+      return invoke<PlanItem[]>("list_plan_items_range", { startDate, endDate });
+    },
+    async create(title: string, planDate: string): Promise<PlanItem> {
+      return invoke<PlanItem>("create_plan_item", { title, planDate });
     },
     async toggleDone(id: string): Promise<PlanItem> {
       return invoke<PlanItem>("toggle_plan_item_done", { id });
@@ -126,6 +140,12 @@ export const commands = {
     async toggleDeferred(id: string): Promise<PlanItem> {
       return invoke<PlanItem>("toggle_plan_item_deferred", { id });
     },
+    async moveToDate(id: string, planDate: string): Promise<PlanItem> {
+      return invoke<PlanItem>("move_plan_item_to_date", { id, planDate });
+    },
+    async rollOverPending(targetDate: string): Promise<number> {
+      return invoke<number>("roll_over_pending_plan_items", { targetDate });
+    },
     async delete(id: string) {
       await invoke("delete_plan_item", { id });
     },
@@ -134,14 +154,26 @@ export const commands = {
     async list(): Promise<Note[]> {
       return invoke<Note[]>("list_notes");
     },
-    async create(body: string): Promise<Note> {
-      return invoke<Note>("create_note", { body });
+    async listGroups(): Promise<NoteGroup[]> {
+      return invoke<NoteGroup[]>("list_note_groups");
     },
-    async createAudio(audioBase64: string): Promise<Note> {
-      return invoke<Note>("create_audio_note", { audioBase64 });
+    async createGroup(name: string): Promise<NoteGroup> {
+      return invoke<NoteGroup>("create_note_group", { name });
+    },
+    async create(body: string, groupId: string | null): Promise<Note> {
+      return invoke<Note>("create_note", { body, groupId });
+    },
+    async createAudio(audioBase64: string, groupId: string | null): Promise<Note> {
+      return invoke<Note>("create_audio_note", { audioBase64, groupId });
     },
     async getAudio(id: string): Promise<string> {
       return invoke<string>("get_note_audio", { id });
+    },
+    async moveToGroup(id: string, groupId: string | null): Promise<Note> {
+      return invoke<Note>("move_note_to_group", { id, groupId });
+    },
+    async update(id: string, body: string): Promise<Note> {
+      return invoke<Note>("update_note", { id, body });
     },
     async delete(id: string) {
       await invoke("delete_note", { id });
@@ -195,6 +227,15 @@ export const commands = {
     async setLocale(locale: Locale) {
       const store = await settingsStore();
       await store.set("locale", locale);
+    },
+    async getMicrophoneDeviceId(): Promise<string | null> {
+      const store = await settingsStore();
+      const value = await store.get<string>("microphoneDeviceId");
+      return value ?? null;
+    },
+    async setMicrophoneDeviceId(deviceId: string | null) {
+      const store = await settingsStore();
+      await store.set("microphoneDeviceId", deviceId);
     },
   },
   diagnostics: {

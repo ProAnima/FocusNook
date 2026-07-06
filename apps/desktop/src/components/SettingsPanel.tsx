@@ -1,21 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
-import { Monitor, Moon, Sun, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Mic, RefreshCw, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
-import { commands, type SyncProvider } from "../shared/commands";
+import { commands, type Locale, type SyncProvider } from "../shared/commands";
+import { ThemePicker } from "./ThemePicker";
 import { LOCALES, LOCALE_LABELS } from "../shared/translations";
 import { useLocale } from "../shared/useLocale";
 import type { ShortcutInfo } from "../shared/useLayerToggle";
+import { useOutsideClick } from "../shared/useOutsideClick";
+import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
 
-function useThemeOptions(): { mode: ThemeMode; label: string; icon: typeof Sun }[] {
-  const { t } = useLocale();
-  return [
-    { mode: "system", label: t("settings.themeSystem"), icon: Monitor },
-    { mode: "light", label: t("settings.themeLight"), icon: Sun },
-    { mode: "dark", label: t("settings.themeDark"), icon: Moon },
-  ];
-}
-
-function ThemeSection({
+function AppearanceSection({
   mode,
   setMode,
 }: {
@@ -23,102 +17,56 @@ function ThemeSection({
   setMode: (mode: ThemeMode) => void;
 }) {
   const { t } = useLocale();
-  const themeOptions = useThemeOptions();
   return (
     <div className="settings-group">
       <span className="settings-group-label">{t("settings.theme")}</span>
-      <div className="theme-options">
-        {themeOptions.map(({ mode: optionMode, label, icon: Icon }) => (
-          <button
-            key={optionMode}
-            className={`theme-option ${mode === optionMode ? "is-active" : ""}`}
-            onClick={() => setMode(optionMode)}
-          >
-            <Icon size={15} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Превью-градиенты продублированы из theme.css (--bg-blob-a/b каждой темы) —
-// CSS-переменные живой темы недоступны, пока она не активна как data-theme,
-// а показать превью нужно именно для НЕ выбранных сейчас тем.
-const LIVE_THEME_PREVIEWS: Record<string, [string, string]> = {
-  aurora: ["#6d5bff", "#2fd6c0"],
-  sunset: ["#ff7a59", "#ffc857"],
-  ocean: ["#2ea8c9", "#1fe0a8"],
-  forest: ["#4f9e5c", "#c9a24a"],
-};
-
-function useLiveThemeOptions(): { mode: ThemeMode; label: string }[] {
-  const { t } = useLocale();
-  return [
-    { mode: "aurora", label: t("settings.themeAurora") },
-    { mode: "sunset", label: t("settings.themeSunset") },
-    { mode: "ocean", label: t("settings.themeOcean") },
-    { mode: "forest", label: t("settings.themeForest") },
-  ];
-}
-
-// Раздел ...: несколько "живых" тем с ненавязчивым анимированным фоном
-// (дрейфующие размытые пятна, лёгкий параллакс за курсором — см. App.css
-// .overlay-shell::before/::after и useLiveBackgroundPointer.ts). Отдельная
-// группа, а не часть ThemeSection — это не режим "светлая/тёмная", а
-// самостоятельный визуальный стиль поверх той же самой data-theme-схемы.
-function LiveThemeSection({
-  mode,
-  setMode,
-}: {
-  mode: ThemeMode;
-  setMode: (mode: ThemeMode) => void;
-}) {
-  const { t } = useLocale();
-  const options = useLiveThemeOptions();
-  return (
-    <div className="settings-group">
-      <span className="settings-group-label">{t("settings.liveThemes")}</span>
-      <div className="live-theme-options">
-        {options.map(({ mode: optionMode, label }) => {
-          const [from, to] = LIVE_THEME_PREVIEWS[optionMode];
-          return (
-            <button
-              key={optionMode}
-              className={`live-theme-option ${mode === optionMode ? "is-active" : ""}`}
-              onClick={() => setMode(optionMode)}
-            >
-              <span
-                className="live-theme-swatch"
-                style={{ backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}
-                aria-hidden="true"
-              />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <ThemePicker mode={mode} setMode={setMode} />
     </div>
   );
 }
 
 function LanguageSection() {
   const { locale, setLocale, t } = useLocale();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useOutsideClick(rootRef, () => setOpen(false));
+
+  function selectLocale(option: Locale) {
+    setOpen(false);
+    setLocale(option);
+  }
+
   return (
-    <div className="settings-group">
+    <div className="settings-group" ref={rootRef}>
       <span className="settings-group-label">{t("settings.language")}</span>
-      <div className="theme-options">
-        {LOCALES.map((option) => (
-          <button
-            key={option}
-            className={`theme-option ${locale === option ? "is-active" : ""}`}
-            onClick={() => setLocale(option)}
-          >
-            <span>{LOCALE_LABELS[option]}</span>
-          </button>
-        ))}
-      </div>
+      <button
+        className={`settings-select-trigger ${open ? "is-open" : ""}`}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label={t("settings.language")}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span>{LOCALE_LABELS[locale]}</span>
+        <ChevronDown size={15} />
+      </button>
+      {open && (
+        <div className="settings-select-menu" role="listbox" aria-label={t("settings.language")}>
+          {LOCALES.map((option) => (
+            <button
+              key={option}
+              className={`settings-select-option ${option === locale ? "is-active" : ""}`}
+              type="button"
+              role="option"
+              aria-selected={option === locale}
+              onClick={() => selectLocale(option)}
+            >
+              <span>{LOCALE_LABELS[option]}</span>
+              {option === locale && <Check size={13} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -153,6 +101,102 @@ function AutostartSection() {
         <span>{t("settings.autostartLabel")}</span>
         <span className={`toggle-switch ${autostart ? "is-on" : ""}`} />
       </button>
+    </div>
+  );
+}
+
+function MicrophoneSection() {
+  const { t } = useLocale();
+  const {
+    devices,
+    selectedDeviceId,
+    loading,
+    permissionNeeded,
+    testing,
+    testFailed,
+    testLevel,
+    requestPermission,
+    refresh,
+    setSelectedDeviceId,
+    toggleMicrophoneTest,
+  } = useMicrophoneSettings();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useOutsideClick(rootRef, () => setOpen(false));
+  const selectedLabel = devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? t("settings.microphoneDefault");
+
+  function select(deviceId: string | null) {
+    setOpen(false);
+    void setSelectedDeviceId(deviceId);
+  }
+
+  return (
+    <div className="settings-group" ref={rootRef}>
+      <span className="settings-group-label">{t("settings.microphone")}</span>
+      <div className="settings-inline-row">
+        <button
+          className={`settings-select-trigger ${open ? "is-open" : ""}`}
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-label={t("settings.microphone")}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          <Mic size={14} />
+          <span>{selectedLabel}</span>
+          <ChevronDown size={15} />
+        </button>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => void refresh()}
+          title={t("settings.microphoneRefresh")}
+          aria-label={t("settings.microphoneRefresh")}
+        >
+          <RefreshCw size={13} />
+        </button>
+      </div>
+      {open && (
+        <div className="settings-select-menu" role="listbox" aria-label={t("settings.microphone")}>
+          <button
+            className={`settings-select-option ${selectedDeviceId === null ? "is-active" : ""}`}
+            type="button"
+            role="option"
+            aria-selected={selectedDeviceId === null}
+            onClick={() => select(null)}
+          >
+            <span>{t("settings.microphoneDefault")}</span>
+            {selectedDeviceId === null && <Check size={13} />}
+          </button>
+          {devices.map((device) => (
+            <button
+              key={device.deviceId}
+              className={`settings-select-option ${device.deviceId === selectedDeviceId ? "is-active" : ""}`}
+              type="button"
+              role="option"
+              aria-selected={device.deviceId === selectedDeviceId}
+              onClick={() => select(device.deviceId)}
+            >
+              <span>{device.label}</span>
+              {device.deviceId === selectedDeviceId && <Check size={13} />}
+            </button>
+          ))}
+        </div>
+      )}
+      {permissionNeeded && (
+        <button className="preset-button" type="button" onClick={() => void requestPermission()} disabled={loading}>
+          {t("settings.microphonePermission")}
+        </button>
+      )}
+      <div className={`microphone-test ${testing ? "is-active" : ""}`}>
+        <button className="preset-button" type="button" onClick={() => void toggleMicrophoneTest()}>
+          {testing ? t("settings.microphoneTestStop") : t("settings.microphoneTestStart")}
+        </button>
+        <div className="microphone-meter" aria-label={t("settings.microphoneLevel")}>
+          <span style={{ transform: `scaleX(${Math.max(0.03, testLevel)})` }} />
+        </div>
+      </div>
+      {testFailed && <p className="note-error">{t("settings.microphoneTestFailed")}</p>}
     </div>
   );
 }
@@ -289,9 +333,9 @@ export function SettingsPanel({
         </button>
       </div>
 
-      <ThemeSection mode={mode} setMode={setMode} />
-      <LiveThemeSection mode={mode} setMode={setMode} />
+      <AppearanceSection mode={mode} setMode={setMode} />
       <LanguageSection />
+      <MicrophoneSection />
       {/* "Запускать вместе с Windows" не имеет смысла на телефоне — раздел 11 ТЗ. */}
       {isDesktop && <AutostartSection />}
       {shortcutInfo && <ShortcutSection info={shortcutInfo} />}

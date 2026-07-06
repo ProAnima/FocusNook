@@ -1,18 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NotesView } from "./NotesView";
 
-const { list, create, createAudio, getAudio, deleteNote } = vi.hoisted(() => ({
+const {
+  list,
+  listGroups,
+  createGroup,
+  create,
+  createAudio,
+  getAudio,
+  moveToGroup,
+  updateNote,
+  deleteNote,
+  getMicrophoneDeviceId,
+  setMicrophoneDeviceId,
+} = vi.hoisted(() => ({
   list: vi.fn(),
+  listGroups: vi.fn(),
+  createGroup: vi.fn(),
   create: vi.fn(),
   createAudio: vi.fn(),
   getAudio: vi.fn(),
+  moveToGroup: vi.fn(),
+  updateNote: vi.fn(),
   deleteNote: vi.fn(),
+  getMicrophoneDeviceId: vi.fn(),
+  setMicrophoneDeviceId: vi.fn(),
 }));
 
 vi.mock("../shared/commands", () => ({
-  commands: { notes: { list, create, createAudio, getAudio, delete: deleteNote } },
+  commands: {
+    notes: { list, listGroups, createGroup, create, createAudio, getAudio, moveToGroup, update: updateNote, delete: deleteNote },
+    settings: { getMicrophoneDeviceId, setMicrophoneDeviceId },
+  },
 }));
 
 class FakeMediaRecorder {
@@ -26,49 +47,114 @@ class FakeMediaRecorder {
   }
 }
 
+function note(overrides = {}) {
+  return { id: "1", title: null, body: "Идея", kind: "text", audioPath: null, groupId: null, ...overrides };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  list.mockResolvedValue([]);
+  listGroups.mockResolvedValue([]);
+  getMicrophoneDeviceId.mockResolvedValue(null);
+  setMicrophoneDeviceId.mockResolvedValue(undefined);
   URL.createObjectURL = vi.fn(() => "blob:mock-url");
   URL.revokeObjectURL = vi.fn();
 });
 
 describe("NotesView", () => {
   it("loads and shows persisted notes", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: null, body: "Идея для раздела 14", kind: "text", audioPath: null },
-    ]);
+    list.mockResolvedValue([note({ body: "Идея для раздела 14" })]);
     render(<NotesView />);
 
     expect(await screen.findByText("Идея для раздела 14")).toBeInTheDocument();
   });
 
   it("shows an empty state when there are no notes", async () => {
-    list.mockResolvedValue([]);
     render(<NotesView />);
 
     expect(await screen.findByText("Пока нет заметок")).toBeInTheDocument();
   });
 
-  it("adds a note through the quick-add form", async () => {
-    list.mockResolvedValue([]);
-    create.mockResolvedValue({ id: "2", title: null, body: "Новая заметка", kind: "text", audioPath: null });
+  it("adds a note through the quick-add form in the active folder", async () => {
+    listGroups.mockResolvedValue([{ id: "g1", name: "Проект" }]);
+    create.mockResolvedValue(note({ id: "2", body: "Новая заметка", groupId: "g1" }));
     const user = userEvent.setup();
     render(<NotesView />);
 
-    await screen.findByText("Пока нет заметок");
-    await user.type(
-      screen.getByPlaceholderText("Новая заметка..."),
-      "Новая заметка{Enter}",
-    );
+    await user.click(await screen.findByText("Проект"));
+    await user.type(screen.getByPlaceholderText("Новая заметка..."), "Новая заметка{Enter}");
 
-    expect(create).toHaveBeenCalledWith("Новая заметка");
+    expect(create).toHaveBeenCalledWith("Новая заметка", "g1");
     expect(await screen.findByText("Новая заметка")).toBeInTheDocument();
   });
 
+  it("creates a folder from the folder composer", async () => {
+    createGroup.mockResolvedValue({ id: "g1", name: "Идеи" });
+    const user = userEvent.setup();
+    render(<NotesView />);
+
+    await user.click(await screen.findByTitle("Создать папку"));
+    await user.type(await screen.findByPlaceholderText("Новая папка..."), "Идеи{Enter}");
+
+    expect(createGroup).toHaveBeenCalledWith("Идеи");
+    expect(await screen.findByText("Идеи")).toBeInTheDocument();
+  });
+
+  it("moves a note to a folder with drag and drop", async () => {
+    list.mockResolvedValue([note({ id: "n1", body: "Перетащи меня" })]);
+    listGroups.mockResolvedValue([{ id: "g1", name: "Архив" }]);
+    moveToGroup.mockResolvedValue(note({ id: "n1", body: "Перетащи меня", groupId: "g1" }));
+    render(<NotesView />);
+
+    const row = await screen.findByText("Перетащи меня");
+    const folder = await screen.findByText("Архив");
+    const dataTransfer = {
+      data: "",
+      effectAllowed: "",
+      setData(_type: string, value: string) {
+        this.data = value;
+      },
+      getData() {
+        return this.data;
+      },
+    };
+
+    fireEvent.dragStart(row.closest(".note-item")!.querySelector(".note-drag-handle")!, { dataTransfer });
+    fireEvent.drop(folder.closest("button")!, { dataTransfer });
+
+    await waitFor(() => expect(moveToGroup).toHaveBeenCalledWith("n1", "g1"));
+  });
+
+  it("keeps shift-enter as a line break in the note composer", async () => {
+    create.mockResolvedValue(note({ id: "2", body: "Первая\nВторая" }));
+    const user = userEvent.setup();
+    render(<NotesView />);
+
+    const composer = await screen.findByPlaceholderText("Новая заметка...");
+    await user.type(composer, "Первая{Shift>}{Enter}{/Shift}Вторая{Enter}");
+
+    expect(create).toHaveBeenCalledWith("Первая\nВторая", null);
+  });
+
+  it("edits a text note inline", async () => {
+    list.mockResolvedValue([note({ id: "n1", body: "Черновик" })]);
+    updateNote.mockResolvedValue(note({ id: "n1", body: "Готовая мысль" }));
+    const user = userEvent.setup();
+    render(<NotesView />);
+
+    await screen.findByText("Черновик");
+    await user.click(screen.getByTitle("Редактировать"));
+    const editor = document.querySelector(".note-editor textarea") as HTMLTextAreaElement;
+    await user.clear(editor);
+    await user.type(editor, "Готовая мысль");
+    await user.click(screen.getByTitle("Сохранить"));
+
+    expect(updateNote).toHaveBeenCalledWith("n1", "Готовая мысль");
+    expect(await screen.findByText("Готовая мысль")).toBeInTheDocument();
+  });
+
   it("removes a note from the list when deleted", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: null, body: "Удали меня", kind: "text", audioPath: null },
-    ]);
+    list.mockResolvedValue([note({ body: "Удали меня" })]);
     deleteNote.mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<NotesView />);
@@ -81,9 +167,7 @@ describe("NotesView", () => {
   });
 
   it("renders an audio player for audio notes", async () => {
-    list.mockResolvedValue([
-      { id: "1", title: null, body: "", kind: "audio", audioPath: "1.webm" },
-    ]);
+    list.mockResolvedValue([note({ body: "", kind: "audio", audioPath: "1.webm" })]);
     getAudio.mockResolvedValue("ZmFrZS1hdWRpbw==");
     const { container } = render(<NotesView />);
 
@@ -92,7 +176,6 @@ describe("NotesView", () => {
   });
 
   it("shows an error when the microphone is unavailable", async () => {
-    list.mockResolvedValue([]);
     const user = userEvent.setup();
     render(<NotesView />);
 
@@ -103,8 +186,7 @@ describe("NotesView", () => {
   });
 
   it("records and adds an audio note", async () => {
-    list.mockResolvedValue([]);
-    createAudio.mockResolvedValue({ id: "3", title: null, body: "", kind: "audio", audioPath: "3.webm" });
+    createAudio.mockResolvedValue(note({ id: "3", body: "", kind: "audio", audioPath: "3.webm" }));
     vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [] }) },
@@ -118,6 +200,6 @@ describe("NotesView", () => {
     await user.click(screen.getByTitle("Записать голосовую заметку"));
     await user.click(await screen.findByTitle("Остановить запись"));
 
-    await waitFor(() => expect(createAudio).toHaveBeenCalled());
+    await waitFor(() => expect(createAudio).toHaveBeenCalledWith(expect.any(String), null));
   });
 });

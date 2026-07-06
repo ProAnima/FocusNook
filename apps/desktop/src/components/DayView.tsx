@@ -1,29 +1,85 @@
-import { useState, type FormEvent } from "react";
-import { CalendarClock, Check, ListChecks, Percent, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  CalendarClock,
+  CalendarDays,
+  CalendarPlus,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ListChecks,
+  Percent,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { usePlanItems } from "../shared/usePlanItems";
-import type { PlanItem } from "../shared/commands";
+import { commands, type PlanItem, type Reminder } from "../shared/commands";
 import { INTL_LOCALE_TAG } from "../shared/translations";
 import { useLocale } from "../shared/useLocale";
+import { useReminders } from "../shared/useReminders";
+import { useOutsideClick } from "../shared/useOutsideClick";
+import {
+  addDays,
+  addMonths,
+  formatDayLabel,
+  formatMonthLabel,
+  monthGrid,
+  monthKeyFromDateKey,
+  monthRange,
+  parseDateKey,
+  reminderDateKey,
+  todayDateKey,
+} from "../shared/dateKeys";
 import { EmptyState } from "./EmptyState";
-
-function todayLabel(localeTag: string): string {
-  return new Intl.DateTimeFormat(localeTag, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(new Date());
-}
 
 interface PlanItemActions {
   onToggleDone: (id: string) => void;
   onCycleProgress: (id: string) => void;
   onToggleDeferred: (id: string) => void;
+  onMoveNextDay: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-// Раздел 12 ТЗ: "контекстное меню: редактировать, отложить, удалить" —
-// реализовано как иконки-действия (см. .plan-item-actions в App.css,
-// скрыты до наведения/фокуса), а не выпадающее меню.
+interface CalendarMarks {
+  tasks: number;
+  reminders: number;
+}
+
+function buildWeekdayLabels(localeTag: string): string[] {
+  return Array.from({ length: 7 }, (_, index) =>
+    new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(new Date(2026, 0, 5 + index)),
+  );
+}
+
+function mergeMarks(items: PlanItem[], reminders: Reminder[]): Record<string, CalendarMarks> {
+  const marks: Record<string, CalendarMarks> = {};
+  for (const item of items) {
+    const mark = marks[item.planDate] ?? { tasks: 0, reminders: 0 };
+    mark.tasks += 1;
+    marks[item.planDate] = mark;
+  }
+  for (const reminder of reminders) {
+    const key = reminderDateKey(reminder.triggerAtUtc);
+    const mark = marks[key] ?? { tasks: 0, reminders: 0 };
+    mark.reminders += 1;
+    marks[key] = mark;
+  }
+  return marks;
+}
+
+function useCalendarItems(monthKey: string) {
+  const [items, setItems] = useState<PlanItem[]>([]);
+
+  useEffect(() => {
+    const { startDate, endDate } = monthRange(monthKey);
+    commands.planItems
+      .listRange(startDate, endDate)
+      .then(setItems)
+      .catch(() => setItems([]));
+  }, [monthKey]);
+
+  return items;
+}
+
 function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
   const { t } = useLocale();
   return (
@@ -31,6 +87,7 @@ function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanIt
       {item.status !== "partial" && (
         <button
           className="icon-button"
+          type="button"
           onClick={() => actions.onCycleProgress(item.id)}
           title={t("day.partial")}
           aria-label={t("day.partial")}
@@ -40,14 +97,27 @@ function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanIt
       )}
       <button
         className={`icon-button ${item.status === "deferred" ? "is-active" : ""}`}
+        type="button"
         onClick={() => actions.onToggleDeferred(item.id)}
         title={item.status === "deferred" ? t("day.resume") : t("day.defer")}
         aria-label={item.status === "deferred" ? t("day.resume") : t("day.defer")}
       >
         <CalendarClock size={13} />
       </button>
+      {item.status !== "done" && (
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => actions.onMoveNextDay(item.id)}
+          title={t("day.moveNext")}
+          aria-label={t("day.moveNext")}
+        >
+          <CalendarPlus size={13} />
+        </button>
+      )}
       <button
         className="icon-button"
+        type="button"
         onClick={() => actions.onDelete(item.id)}
         title={t("common.delete")}
         aria-label={t("common.delete")}
@@ -64,6 +134,7 @@ function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActio
     <li className={`plan-item status-${item.status}`}>
       <button
         className="plan-checkbox"
+        type="button"
         onClick={() => actions.onToggleDone(item.id)}
         aria-label={item.status === "done" ? t("day.markUndone") : t("day.markDone")}
       >
@@ -73,6 +144,7 @@ function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActio
       {item.status === "partial" && (
         <button
           className="plan-progress"
+          type="button"
           onClick={() => actions.onCycleProgress(item.id)}
           title={t("day.changeProgress")}
         >
@@ -84,15 +156,7 @@ function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActio
   );
 }
 
-function PlanList({
-  loaded,
-  items,
-  actions,
-}: {
-  loaded: boolean;
-  items: PlanItem[];
-  actions: PlanItemActions;
-}) {
+function PlanList({ loaded, items, actions }: { loaded: boolean; items: PlanItem[]; actions: PlanItemActions }) {
   const { t } = useLocale();
   if (loaded && items.length === 0) {
     return <EmptyState icon={ListChecks} text={t("day.empty")} />;
@@ -106,27 +170,133 @@ function PlanList({
   );
 }
 
-function DayHeader({ doneCount, total }: { doneCount: number; total: number }) {
-  const { locale } = useLocale();
+function DayHeader({
+  selectedDate,
+  doneCount,
+  total,
+  onChangeDate,
+  onOpenCalendar,
+}: {
+  selectedDate: string;
+  doneCount: number;
+  total: number;
+  onChangeDate: (dateKey: string) => void;
+  onOpenCalendar: () => void;
+}) {
+  const { t, locale } = useLocale();
+  const today = todayDateKey();
   return (
     <div className="day-header">
-      <span className="day-date">{todayLabel(INTL_LOCALE_TAG[locale])}</span>
-      <span className="day-count">
-        {doneCount}/{total}
-      </span>
+      <div className="day-date-block">
+        <span className="day-date">{formatDayLabel(selectedDate, locale)}</span>
+        <span className="day-count">
+          {doneCount}/{total}
+        </span>
+      </div>
+      <div className="day-nav">
+        <button className="icon-button" type="button" onClick={() => onChangeDate(addDays(selectedDate, -1))} title={t("day.previous")} aria-label={t("day.previous")}>
+          <ChevronLeft size={14} />
+        </button>
+        {selectedDate !== today && (
+          <button className="day-today-button" type="button" onClick={() => onChangeDate(today)}>
+            {t("day.today")}
+          </button>
+        )}
+        <button className="icon-button" type="button" onClick={onOpenCalendar} title={t("day.openCalendar")} aria-label={t("day.openCalendar")}>
+          <CalendarDays size={14} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => onChangeDate(addDays(selectedDate, 1))} title={t("day.next")} aria-label={t("day.next")}>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarPopover({
+  monthKey,
+  selectedDate,
+  reminders,
+  onMonthChange,
+  onSelectDate,
+  onClose,
+}: {
+  monthKey: string;
+  selectedDate: string;
+  reminders: Reminder[];
+  onMonthChange: (monthKey: string) => void;
+  onSelectDate: (dateKey: string) => void;
+  onClose: () => void;
+}) {
+  const { t, locale } = useLocale();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const calendarItems = useCalendarItems(monthKey);
+  const days = useMemo(() => monthGrid(monthKey), [monthKey]);
+  const marks = useMemo(() => mergeMarks(calendarItems, reminders), [calendarItems, reminders]);
+  const localeTag = INTL_LOCALE_TAG[locale];
+  useOutsideClick(rootRef, onClose);
+
+  return (
+    <div className="calendar-popover" ref={rootRef}>
+      <div className="calendar-header">
+        <button className="icon-button" type="button" onClick={() => onMonthChange(addMonths(monthKey, -1))} title={t("day.previous")} aria-label={t("day.previous")}>
+          <ChevronLeft size={14} />
+        </button>
+        <span>{formatMonthLabel(monthKey, locale)}</span>
+        <button className="icon-button" type="button" onClick={() => onMonthChange(addMonths(monthKey, 1))} title={t("day.next")} aria-label={t("day.next")}>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="calendar-grid">
+        {buildWeekdayLabels(localeTag).map((label) => (
+          <span key={label} className="calendar-weekday">
+            {label}
+          </span>
+        ))}
+        {days.map((dateKey) => {
+          const mark = marks[dateKey];
+          const isOtherMonth = !dateKey.startsWith(monthKey);
+          const isToday = dateKey === todayDateKey();
+          return (
+            <button
+              key={dateKey}
+              className={`calendar-day ${isOtherMonth ? "is-muted" : ""} ${dateKey === selectedDate ? "is-selected" : ""} ${isToday ? "is-today" : ""}`}
+              type="button"
+              onClick={() => onSelectDate(dateKey)}
+              title={`${formatDayLabel(dateKey, locale)}${mark?.tasks ? `, ${t("day.calendarTasks")}: ${mark.tasks}` : ""}${mark?.reminders ? `, ${t("day.calendarReminders")}: ${mark.reminders}` : ""}`}
+            >
+              <span>{parseDateKey(dateKey).getDate()}</span>
+              <span className="calendar-marks">
+                {mark?.tasks ? <span className="calendar-dot is-task" /> : null}
+                {mark?.reminders ? <span className="calendar-dot is-reminder" /> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 export function DayView() {
-  const plan = usePlanItems();
+  const [selectedDate, setSelectedDate] = useState(todayDateKey);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => monthKeyFromDateKey(todayDateKey()));
+  const plan = usePlanItems(selectedDate, selectedDate === todayDateKey());
+  const { reminders } = useReminders();
   const [draft, setDraft] = useState("");
-  const { t } = useLocale();
   const doneCount = plan.items.filter((item) => item.status === "done").length;
+
+  function changeDate(dateKey: string) {
+    setSelectedDate(dateKey);
+    setCalendarMonth(monthKeyFromDateKey(dateKey));
+  }
+
   const actions: PlanItemActions = {
     onToggleDone: plan.toggleDone,
     onCycleProgress: plan.cycleProgress,
     onToggleDeferred: plan.toggleDeferred,
+    onMoveNextDay: (id) => void plan.moveToDate(id, addDays(selectedDate, 1)),
     onDelete: plan.deleteItem,
   };
 
@@ -138,9 +308,29 @@ export function DayView() {
     void plan.addItem(title);
   }
 
+  const { t } = useLocale();
   return (
-    <div className="tab-view">
-      <DayHeader doneCount={doneCount} total={plan.items.length} />
+    <div className="tab-view day-shell">
+      <DayHeader
+        selectedDate={selectedDate}
+        doneCount={doneCount}
+        total={plan.items.length}
+        onChangeDate={changeDate}
+        onOpenCalendar={() => setCalendarOpen((value) => !value)}
+      />
+      {calendarOpen && (
+        <CalendarPopover
+          monthKey={calendarMonth}
+          selectedDate={selectedDate}
+          reminders={reminders}
+          onMonthChange={setCalendarMonth}
+          onSelectDate={(dateKey) => {
+            changeDate(dateKey);
+            setCalendarOpen(false);
+          }}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
       <PlanList loaded={plan.loaded} items={plan.items} actions={actions} />
 
       <form className="quick-add" onSubmit={handleSubmit}>

@@ -189,9 +189,22 @@ fn switch_active_profile(
 }
 
 #[tauri::command]
-fn list_plan_items(db: tauri::State<db::Db>) -> Result<Vec<plan_items::PlanItemDto>, String> {
+fn list_plan_items(
+    db: tauri::State<db::Db>,
+    plan_date: String,
+) -> Result<Vec<plan_items::PlanItemDto>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    plan_items::list(&conn).map_err(|e| e.to_string())
+    plan_items::list(&conn, &plan_date).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_plan_items_range(
+    db: tauri::State<db::Db>,
+    start_date: String,
+    end_date: String,
+) -> Result<Vec<plan_items::PlanItemDto>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    plan_items::list_range(&conn, &start_date, &end_date).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -200,11 +213,13 @@ fn create_plan_item(
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
     title: String,
+    plan_date: String,
 ) -> Result<plan_items::PlanItemDto, String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::create(&mut conn, &mut clock, &profile_id, &title).map_err(|e| e.to_string())
+    plan_items::create(&mut conn, &mut clock, &profile_id, &title, &plan_date)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -247,6 +262,35 @@ fn toggle_plan_item_deferred(
 }
 
 #[tauri::command]
+fn move_plan_item_to_date(
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+    plan_date: String,
+) -> Result<plan_items::PlanItemDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    plan_items::move_to_date(&mut conn, &mut clock, &profile_id, &id, &plan_date)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn roll_over_pending_plan_items(
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    target_date: String,
+) -> Result<usize, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    plan_items::roll_over_pending(&mut conn, &mut clock, &profile_id, &target_date)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn delete_plan_item(
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
@@ -266,16 +310,72 @@ fn list_notes(db: tauri::State<db::Db>) -> Result<Vec<notes::NoteDto>, String> {
 }
 
 #[tauri::command]
+fn list_note_groups(db: tauri::State<db::Db>) -> Result<Vec<notes::NoteGroupDto>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    notes::list_groups(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_note_group(
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    name: String,
+) -> Result<notes::NoteGroupDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    notes::create_group(&mut conn, &mut clock, &profile_id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn create_note(
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
     body: String,
+    group_id: Option<String>,
 ) -> Result<notes::NoteDto, String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    notes::create(&mut conn, &mut clock, &profile_id, &body).map_err(|e| e.to_string())
+    notes::create(
+        &mut conn,
+        &mut clock,
+        &profile_id,
+        &body,
+        group_id.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_note_to_group(
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+    group_id: Option<String>,
+) -> Result<notes::NoteDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    notes::move_to_group(&mut conn, &mut clock, &profile_id, &id, group_id.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_note(
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+    body: String,
+) -> Result<notes::NoteDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    notes::update_body(&mut conn, &mut clock, &profile_id, &id, &body).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -303,6 +403,7 @@ fn create_audio_note(
     audio_key_state: tauri::State<AudioKeyState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
     audio_base64: String,
+    group_id: Option<String>,
 ) -> Result<notes::NoteDto, String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
@@ -316,6 +417,7 @@ fn create_audio_note(
         &dir,
         audio_key.as_deref(),
         &audio_base64,
+        group_id.as_deref(),
     )
 }
 
@@ -737,13 +839,20 @@ pub fn run() {
             create_profile,
             switch_active_profile,
             list_plan_items,
+            list_plan_items_range,
             create_plan_item,
             toggle_plan_item_done,
             cycle_plan_item_progress,
             toggle_plan_item_deferred,
+            move_plan_item_to_date,
+            roll_over_pending_plan_items,
             delete_plan_item,
             list_notes,
+            list_note_groups,
+            create_note_group,
             create_note,
+            move_note_to_group,
+            update_note,
             create_audio_note,
             get_note_audio,
             delete_note,

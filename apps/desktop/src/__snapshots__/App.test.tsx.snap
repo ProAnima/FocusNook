@@ -238,23 +238,134 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
       class="body"
     >
       <div
-        class="tab-view"
+        class="tab-view day-shell"
       >
         <div
           class="day-header"
         >
-          <span
-            class="day-date"
+          <div
+            class="day-date-block"
           >
-            DATE_PLACEHOLDER
-          </span>
-          <span
-            class="day-count"
+            <span
+              class="day-date"
+            >
+              DATE_PLACEHOLDER
+            </span>
+            <span
+              class="day-count"
+            >
+              0
+              /
+              0
+            </span>
+          </div>
+          <div
+            class="day-nav"
           >
-            0
-            /
-            0
-          </span>
+            <button
+              aria-label="Предыдущий день"
+              class="icon-button"
+              title="Предыдущий день"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-chevron-left"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m15 18-6-6 6-6"
+                />
+              </svg>
+            </button>
+            <button
+              aria-label="Открыть календарь"
+              class="icon-button"
+              title="Открыть календарь"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-calendar-days"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M8 2v4"
+                />
+                <path
+                  d="M16 2v4"
+                />
+                <rect
+                  height="18"
+                  rx="2"
+                  width="18"
+                  x="3"
+                  y="4"
+                />
+                <path
+                  d="M3 10h18"
+                />
+                <path
+                  d="M8 14h.01"
+                />
+                <path
+                  d="M12 14h.01"
+                />
+                <path
+                  d="M16 14h.01"
+                />
+                <path
+                  d="M8 18h.01"
+                />
+                <path
+                  d="M12 18h.01"
+                />
+                <path
+                  d="M16 18h.01"
+                />
+              </svg>
+            </button>
+            <button
+              aria-label="Следующий день"
+              class="icon-button"
+              title="Следующий день"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-chevron-right"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m9 18 6-6-6-6"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
         <div
           class="empty-state"
@@ -344,23 +455,134 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
       class="body"
     >
       <div
-        class="tab-view"
+        class="tab-view day-shell"
       >
         <div
           class="day-header"
         >
-          <span
-            class="day-date"
+          <div
+            class="day-date-block"
           >
-            DATE_PLACEHOLDER
-          </span>
-          <span
-            class="day-count"
+            <span
+              class="day-date"
+            >
+              DATE_PLACEHOLDER
+            </span>
+            <span
+              class="day-count"
+            >
+              0
+              /
+              0
+            </span>
+          </div>
+          <div
+            class="day-nav"
           >
-            0
-            /
-            0
-          </span>
+            <button
+              aria-label="Предыдущий день"
+              class="icon-button"
+              title="Предыдущий день"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-chevron-left"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m15 18-6-6 6-6"
+                />
+              </svg>
+            </button>
+            <button
+              aria-label="Открыть календарь"
+              class="icon-button"
+              title="Открыть календарь"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-calendar-days"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M8 2v4"
+                />
+                <path
+                  d="M16 2v4"
+                />
+                <rect
+                  height="18"
+                  rx="2"
+                  width="18"
+                  x="3"
+                  y="4"
+                />
+                <path
+                  d="M3 10h18"
+                />
+                <path
+                  d="M8 14h.01"
+                />
+                <path
+                  d="M12 14h.01"
+                />
+                <path
+                  d="M16 14h.01"
+                />
+                <path
+                  d="M8 18h.01"
+                />
+                <path
+                  d="M12 18h.01"
+                />
+                <path
+                  d="M16 18h.01"
+                />
+              </svg>
+            </button>
+            <button
+              aria-label="Следующий день"
+              class="icon-button"
+              title="Следующий день"
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-chevron-right"
+                fill="none"
+                height="14"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="14"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m9 18 6-6-6-6"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
         <div
           class="empty-state"

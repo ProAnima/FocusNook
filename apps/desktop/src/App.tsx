@@ -13,11 +13,13 @@ import { useLiveBackgroundPointer } from "./shared/useLiveBackgroundPointer";
 import { useLocale } from "./shared/useLocale";
 import { useProfiles } from "./shared/useProfiles";
 import { useTheme } from "./shared/useTheme";
+import type { ResolvedTheme } from "./shared/theme-context";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { DayView } from "./components/DayView";
 import { NotesView } from "./components/NotesView";
 import { RemindersView } from "./components/RemindersView";
 import { ReminderAlert } from "./components/ReminderAlert";
+import { LiveBackground } from "./components/LiveBackground";
 import { OverlayHeader } from "./components/OverlayHeader";
 import { TabBar, type TabDefinition } from "./components/TabBar";
 import "./App.css";
@@ -68,11 +70,12 @@ interface DesktopShellProps {
   front: boolean;
   toggleLayer: () => void;
   shortcutInfo: ShortcutInfo | null;
+  theme: ResolvedTheme;
 }
 
 // Desktop: тихий угловой оверлей (раздел 12 ТЗ) — настройки нарочно не
 // четвёртая вкладка, а ненавязчивый экран за иконкой в шапке.
-function DesktopShell({ front, toggleLayer, shortcutInfo }: DesktopShellProps) {
+function DesktopShell({ front, toggleLayer, shortcutInfo, theme }: DesktopShellProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
   const [showSettings, setShowSettings] = useState(false);
   const { profiles, activeProfileId, createProfile, switchProfile } = useProfiles();
@@ -80,6 +83,7 @@ function DesktopShell({ front, toggleLayer, shortcutInfo }: DesktopShellProps) {
 
   return (
     <div className="overlay-shell">
+      <LiveBackground theme={theme} />
       <OverlayHeader
         front={front}
         onToggleLayer={toggleLayer}
@@ -91,9 +95,7 @@ function DesktopShell({ front, toggleLayer, shortcutInfo }: DesktopShellProps) {
         onCreateProfile={createProfile}
       />
 
-      {!showSettings && (
-        <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />
-      )}
+      {!showSettings && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
 
       <main className="body">
         {showSettings ? (
@@ -103,11 +105,6 @@ function DesktopShell({ front, toggleLayer, shortcutInfo }: DesktopShellProps) {
             isDesktop
           />
         ) : (
-          // key=activeProfileId: переключение профиля должно перезагрузить
-          // дела/заметки/напоминания с нуля (раздел 15 ТЗ — у профиля свой
-          // vault), а не показывать данные предыдущего профиля до ручного
-          // рефреша. Остальные хуки (usePlanItems и т.д.) уже читают на
-          // маунте — размонтирование/маунт через key даёт это бесплатно.
           <TabContent
             key={activeProfileId}
             tab={activeTab}
@@ -125,13 +122,20 @@ function DesktopShell({ front, toggleLayer, shortcutInfo }: DesktopShellProps) {
 // нижняя навигация (настройки — обычный, легко доступный большим пальцем
 // пункт, а не спрятанная иконка в верхнем углу) и контекстный заголовок сверху
 // вместо статичного бренда.
-function MobileShell({ shortcutInfo }: { shortcutInfo: ShortcutInfo | null }) {
+function MobileShell({
+  shortcutInfo,
+  theme,
+}: {
+  shortcutInfo: ShortcutInfo | null;
+  theme: ResolvedTheme;
+}) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
   const mobileTabs = useMobileTabs();
   const activeLabel = mobileTabs.find((tab) => tab.key === activeTab)?.label ?? "";
 
   return (
     <div className="overlay-shell mobile-shell">
+      <LiveBackground theme={theme} />
       <header className="mobile-topbar">
         <span className="mobile-topbar-title">{activeLabel}</span>
       </header>
@@ -161,9 +165,9 @@ function Shell() {
   const { effective } = useTheme();
   useLiveBackgroundPointer(effective);
   return isDesktop ? (
-    <DesktopShell front={front} toggleLayer={toggleLayer} shortcutInfo={shortcutInfo} />
+    <DesktopShell front={front} toggleLayer={toggleLayer} shortcutInfo={shortcutInfo} theme={effective} />
   ) : (
-    <MobileShell shortcutInfo={shortcutInfo} />
+    <MobileShell shortcutInfo={shortcutInfo} theme={effective} />
   );
 }
 

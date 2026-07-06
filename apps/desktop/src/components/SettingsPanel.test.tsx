@@ -10,6 +10,8 @@ const {
   setMode,
   getLocale,
   setLocale,
+  getMicrophoneDeviceId,
+  setMicrophoneDeviceId,
   exportDiagnostics,
   syncStatus,
   syncStart,
@@ -20,6 +22,8 @@ const {
   setMode: vi.fn(),
   getLocale: vi.fn().mockResolvedValue(null),
   setLocale: vi.fn().mockResolvedValue(undefined),
+  getMicrophoneDeviceId: vi.fn().mockResolvedValue(null),
+  setMicrophoneDeviceId: vi.fn().mockResolvedValue(undefined),
   exportDiagnostics: vi.fn(),
   syncStatus: vi.fn().mockResolvedValue({ connected: false }),
   syncStart: vi.fn().mockResolvedValue(undefined),
@@ -28,7 +32,7 @@ const {
 
 vi.mock("../shared/commands", () => ({
   commands: {
-    settings: { getAutostart, setAutostart, getLocale, setLocale },
+    settings: { getAutostart, setAutostart, getLocale, setLocale, getMicrophoneDeviceId, setMicrophoneDeviceId },
     diagnostics: { export: exportDiagnostics },
     sync: { status: syncStatus, start: syncStart, disconnect: syncDisconnect },
   },
@@ -52,14 +56,23 @@ describe("SettingsPanel", () => {
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
+    await user.click(await screen.findByRole("button", { name: /Системная/ }));
     await user.click(await screen.findByText("Закат"));
 
     expect(setMode).toHaveBeenCalledWith("sunset");
   });
 
-  // Раздел 11 ТЗ: "Launch with Windows" не имеет смысла на телефоне — сам
-  // факт, что вызов автостарта мог бы формально не упасть на Android, ещё не
-  // значит, что показывать переключатель там правильно.
+  it("keeps theme variants collapsed until the section is opened", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    expect(container.querySelectorAll(".theme-row")).toHaveLength(0);
+    await user.click(await screen.findByRole("button", { name: /Системная/ }));
+    await screen.findByText("Призма");
+
+    expect(container.querySelectorAll(".theme-row")).toHaveLength(10);
+  });
+
   it("hides the autostart section on the mobile shell", async () => {
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop={false} />);
 
@@ -89,10 +102,20 @@ describe("SettingsPanel", () => {
     );
 
     await screen.findByText("Настройки");
-    await user.click(screen.getByText("English"));
+    await user.click(screen.getByRole("button", { name: "Язык" }));
+    await user.click(screen.getByRole("option", { name: "English" }));
 
     expect(setLocale).toHaveBeenCalledWith("en");
     expect(await screen.findByText("Settings")).toBeInTheDocument();
+  });
+
+  it("offers ten popular UI languages", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.click(screen.getByRole("button", { name: "Язык" }));
+
+    expect(screen.getAllByRole("option")).toHaveLength(10);
   });
 
   it("shows the saved path after exporting diagnostics", async () => {
@@ -132,7 +155,7 @@ describe("SettingsPanel", () => {
     expect(syncStart).toHaveBeenCalledWith("google_drive");
   });
 
-  it("shows an error when starting auth fails (e.g. provider not configured)", async () => {
+  it("shows an error when starting auth fails", async () => {
     syncStart.mockRejectedValueOnce(new Error("provider not configured"));
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
