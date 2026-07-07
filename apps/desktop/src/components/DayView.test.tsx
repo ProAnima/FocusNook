@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
@@ -155,13 +155,39 @@ describe("DayView", () => {
   it("removes an item from the list when deleted", async () => {
     list.mockResolvedValue([item()]);
     deletePlanItem.mockResolvedValue(undefined);
-    const user = userEvent.setup();
     render(<DayView />);
 
     await screen.findByText("Задача");
-    await user.click(screen.getByTitle("Удалить"));
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByTitle("Удалить"), { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(950);
+    });
+    vi.useRealTimers();
 
     expect(deletePlanItem).toHaveBeenCalledWith("1");
     expect(screen.queryByText("Задача")).not.toBeInTheDocument();
+  });
+
+  it("keeps an item when delete hold is released early", async () => {
+    list.mockResolvedValue([item()]);
+    deletePlanItem.mockResolvedValue(undefined);
+    render(<DayView />);
+
+    await screen.findByText("Задача");
+    vi.useFakeTimers();
+    const deleteButton = screen.getByTitle("Удалить");
+    fireEvent.pointerDown(deleteButton, { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+    });
+    fireEvent.pointerUp(deleteButton, { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    vi.useRealTimers();
+
+    expect(deletePlanItem).not.toHaveBeenCalled();
+    expect(screen.getByText("Задача")).toBeInTheDocument();
   });
 });

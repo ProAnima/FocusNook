@@ -23,6 +23,7 @@ import { useAudioRecorder } from "../shared/useAudioRecorder";
 import { useLocale } from "../shared/useLocale";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
 import { useOutsideClick } from "../shared/useOutsideClick";
+import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { EmptyState } from "./EmptyState";
 
 const NOTE_DRAG_TYPE = "application/x-focusnook-note-id";
@@ -241,6 +242,7 @@ function NoteRow({
   const [editing, setEditing] = useState(false);
   const { t } = useLocale();
   const draggable = !editing;
+  const deleteHold = useHoldToConfirm(() => onDelete(note.id));
   function startDrag(event: DragEvent<HTMLElement>) {
     if (!draggable) return;
     const target = event.target as HTMLElement;
@@ -255,7 +257,7 @@ function NoteRow({
 
   return (
     <li
-      className={`note-item ${note.kind === "audio" ? "is-audio" : ""} ${editing ? "is-editing" : ""}`}
+      className={`note-item ${note.kind === "audio" ? "is-audio" : ""} ${editing ? "is-editing" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}
       draggable={draggable}
       onDragStart={startDrag}
     >
@@ -296,11 +298,11 @@ function NoteRow({
           </button>
         )}
         <button
-          className="icon-button"
+          className="icon-button hold-delete-button"
           type="button"
-          onClick={() => onDelete(note.id)}
           title={t("common.delete")}
           aria-label={t("common.delete")}
+          {...deleteHold.buttonProps}
         >
           <Trash2 size={13} />
         </button>

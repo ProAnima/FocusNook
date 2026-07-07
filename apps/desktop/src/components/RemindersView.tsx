@@ -8,6 +8,7 @@ import { dateKeyFromDate, formatDayLabel, monthKeyFromDateKey, parseDateKey } fr
 import type { LocaleContextValue } from "../shared/locale-context";
 import { useLocale } from "../shared/useLocale";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
+import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { CalendarPopover } from "./CalendarPopover";
 import { EmptyState } from "./EmptyState";
 
@@ -86,8 +87,9 @@ function TimeStepper({
 
 function ReminderRow({ reminder, now, onDelete }: { reminder: Reminder; now: number; onDelete: (id: string) => void }) {
   const { t, locale } = useLocale();
+  const deleteHold = useHoldToConfirm(() => onDelete(reminder.id));
   return (
-    <li className={`reminder-item ${reminder.audioPath ? "is-audio" : ""}`}>
+    <li className={`reminder-item ${reminder.audioPath ? "is-audio" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
       <span className="reminder-kind">{reminder.audioPath ? <Volume2 size={13} /> : <BellRing size={13} />}</span>
       <span className="reminder-title">{reminder.title}</span>
       <span className="reminder-time-block">
@@ -95,7 +97,7 @@ function ReminderRow({ reminder, now, onDelete }: { reminder: Reminder; now: num
         <span className="reminder-countdown">{formatCountdown(reminder.triggerAtUtc, now, t)}</span>
       </span>
       <div className="reminder-item-actions">
-        <button className="icon-button" onClick={() => onDelete(reminder.id)} title={t("common.delete")} aria-label={t("common.delete")}>
+        <button className="icon-button hold-delete-button" type="button" title={t("common.delete")} aria-label={t("common.delete")} {...deleteHold.buttonProps}>
           <Trash2 size={13} />
         </button>
       </div>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NotesView } from "./NotesView";
 
@@ -197,11 +197,15 @@ describe("NotesView", () => {
   it("removes a note from the list when deleted", async () => {
     list.mockResolvedValue([note({ body: "Удали меня" })]);
     deleteNote.mockResolvedValue(undefined);
-    const user = userEvent.setup();
     render(<NotesView />);
 
     await screen.findByText("Удали меня");
-    await user.click(screen.getByTitle("Удалить"));
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByTitle("Удалить"), { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(950);
+    });
+    vi.useRealTimers();
 
     expect(deleteNote).toHaveBeenCalledWith("1");
     expect(screen.queryByText("Удали меня")).not.toBeInTheDocument();

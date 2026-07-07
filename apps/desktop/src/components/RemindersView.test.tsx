@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RemindersView } from "./RemindersView";
 
@@ -163,11 +163,15 @@ describe("RemindersView", () => {
       },
     ]);
     deleteReminder.mockResolvedValue(undefined);
-    const user = userEvent.setup();
     render(<RemindersView />);
 
     await screen.findByText("Напоминание");
-    await user.click(screen.getByTitle("Удалить"));
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByTitle("Удалить"), { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(950);
+    });
+    vi.useRealTimers();
 
     expect(deleteReminder).toHaveBeenCalledWith("1");
     expect(screen.queryByText("Напоминание")).not.toBeInTheDocument();

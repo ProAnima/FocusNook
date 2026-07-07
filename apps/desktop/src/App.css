@@ -608,7 +608,8 @@ textarea {
   gap: 10px;
   padding: 8px 6px;
   border-radius: 6px;
-  transition: background-color 0.15s ease;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .plan-item:hover {
@@ -1294,6 +1295,7 @@ textarea {
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
+  border: 1px solid transparent;
   background: var(--control-bg);
 }
 
@@ -2388,6 +2390,66 @@ textarea {
   font-weight: 600;
 }
 
+.plan-item,
+.note-item,
+.reminder-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.plan-item::before,
+.note-item::before,
+.reminder-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--danger) 34%, transparent), transparent 72%),
+    color-mix(in srgb, var(--danger-soft-bg) 82%, transparent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  pointer-events: none;
+}
+
+.plan-item > *,
+.note-item > *,
+.reminder-item > * {
+  position: relative;
+  z-index: 1;
+}
+
+.plan-item.is-delete-holding,
+.note-item.is-delete-holding,
+.reminder-item.is-delete-holding {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--divider));
+  color: var(--text-primary);
+}
+
+.plan-item.is-delete-holding::before,
+.note-item.is-delete-holding::before,
+.reminder-item.is-delete-holding::before {
+  opacity: 1;
+  transform: scaleX(1);
+  transition:
+    opacity 100ms ease,
+    transform 900ms linear;
+}
+
+.hold-delete-button {
+  touch-action: none;
+}
+
+.is-delete-holding .hold-delete-button {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: color-mix(in srgb, var(--danger-soft-bg) 74%, transparent);
+  color: var(--danger);
+}
+
 /* --- Mobile shell (Android) --- */
 /* App.tsx рендерит на мобильных платформах отдельный MobileShell, а не
    растягивает десктопный OverlayHeader/верхние вкладки (isDesktop из
@@ -2404,9 +2466,9 @@ textarea {
 .mobile-topbar {
   display: flex;
   align-items: center;
-  height: 56px;
-  min-height: 56px;
-  padding: 0 18px;
+  height: calc(64px + env(safe-area-inset-top, 0px));
+  min-height: calc(64px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 20px 0;
   border-bottom: 1px solid var(--divider);
 }
 
@@ -2440,7 +2502,7 @@ textarea {
    мобильного — на телефоне ему нужен масштаб побольше, чем в компактном
    380x480 оверлее. */
 .mobile-shell .body {
-  padding: 18px;
+  padding: 20px 18px 18px;
   font-size: 16px;
 }
 
@@ -2472,13 +2534,14 @@ textarea {
 }
 
 .mobile-shell .plan-item {
-  padding: 12px 8px;
-  gap: 14px;
+  min-height: 64px;
+  padding: 12px 10px;
+  gap: 12px;
 }
 
 .mobile-shell .plan-checkbox {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
 }
 
 .mobile-shell .plan-title {
@@ -2486,10 +2549,31 @@ textarea {
 }
 
 .mobile-shell .plan-progress {
+  min-width: 46px;
+  min-height: 34px;
   font-size: 12px;
 }
 
+.mobile-shell .plan-item-actions {
+  gap: 6px;
+  opacity: 1;
+}
+
+.mobile-shell .icon-button,
+.mobile-shell .note-audio-play,
+.mobile-shell .time-stepper button {
+  min-width: 42px;
+  min-height: 42px;
+}
+
+.mobile-shell .icon-button svg,
+.mobile-shell .note-audio-play svg {
+  width: 17px;
+  height: 17px;
+}
+
 .mobile-shell .quick-add {
+  min-height: 52px;
   padding: 12px 14px;
 }
 
@@ -2513,7 +2597,7 @@ textarea {
 }
 
 .mobile-shell .time-stepper {
-  width: 42px;
+  width: 50px;
 }
 
 .mobile-shell .reminder-custom-time .preset-button {
@@ -2523,11 +2607,23 @@ textarea {
 
 .mobile-shell .note-item,
 .mobile-shell .reminder-item {
-  padding: 12px 14px;
+  min-height: 66px;
+  padding: 14px;
+}
+
+.mobile-shell .note-item-actions,
+.mobile-shell .reminder-item-actions {
+  gap: 8px;
+  opacity: 1;
+}
+
+.mobile-shell .note-drag-handle {
+  width: 28px;
+  min-height: 44px;
 }
 
 .mobile-shell .note-folder-chip {
-  min-height: 38px;
+  min-height: 44px;
   font-size: 13px;
 }
 
@@ -2556,7 +2652,7 @@ textarea {
 }
 
 .mobile-shell .note-folder-mobile-toggle {
-  min-height: 46px;
+  min-height: 52px;
   width: 100%;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto 18px;
@@ -2609,7 +2705,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 12px 12px;
+  padding: 10px 14px 14px;
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--surface-border) 72%, rgba(255, 255, 255, 0.14));
   background: color-mix(in srgb, #12172b 88%, var(--surface-gradient) 12%);
@@ -2678,7 +2774,7 @@ textarea {
 }
 
 .mobile-shell .note-folder-mobile-item {
-  min-height: 48px;
+  min-height: 56px;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
@@ -2727,6 +2823,21 @@ textarea {
   padding-bottom: 2px;
 }
 
+.mobile-shell .note-audio-card {
+  min-height: 56px;
+  gap: 12px;
+}
+
+.mobile-shell .note-audio-progress {
+  height: 24px;
+}
+
+.mobile-shell .record-button,
+.mobile-shell .note-submit-button {
+  min-width: 46px;
+  min-height: 46px;
+}
+
 .mobile-shell .note-folder-create {
   min-height: 38px;
 }
@@ -2742,6 +2853,16 @@ textarea {
 
 .mobile-shell .reminder-time {
   font-size: 12px;
+}
+
+.mobile-shell .reminder-presets {
+  gap: 8px;
+}
+
+.mobile-shell .reminder-presets .preset-button,
+.mobile-shell .reminder-time-shortcuts button,
+.mobile-shell .reminder-audio-chip {
+  min-height: 44px;
 }
 
 .mobile-shell .settings-header {

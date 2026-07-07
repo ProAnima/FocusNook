@@ -15,6 +15,7 @@ import { usePlanItems } from "../shared/usePlanItems";
 import { commands, type PlanItem } from "../shared/commands";
 import { useLocale } from "../shared/useLocale";
 import { useReminders } from "../shared/useReminders";
+import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import {
   addDays,
   formatDayLabel,
@@ -48,7 +49,15 @@ function useCalendarItems(monthKey: string) {
   return items;
 }
 
-function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
+function PlanItemActionsRow({
+  item,
+  actions,
+  deleteButtonProps,
+}: {
+  item: PlanItem;
+  actions: PlanItemActions;
+  deleteButtonProps: ReturnType<typeof useHoldToConfirm>["buttonProps"];
+}) {
   const { t } = useLocale();
   return (
     <div className="plan-item-actions">
@@ -84,11 +93,11 @@ function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanIt
         </button>
       )}
       <button
-        className="icon-button"
+        className="icon-button hold-delete-button"
         type="button"
-        onClick={() => actions.onDelete(item.id)}
         title={t("common.delete")}
         aria-label={t("common.delete")}
+        {...deleteButtonProps}
       >
         <Trash2 size={13} />
       </button>
@@ -98,8 +107,9 @@ function PlanItemActionsRow({ item, actions }: { item: PlanItem; actions: PlanIt
 
 function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
   const { t } = useLocale();
+  const deleteHold = useHoldToConfirm(() => actions.onDelete(item.id));
   return (
-    <li className={`plan-item status-${item.status}`}>
+    <li className={`plan-item status-${item.status} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
       <button
         className="plan-checkbox"
         type="button"
@@ -119,7 +129,7 @@ function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActio
           {item.progressPercent}%
         </button>
       )}
-      <PlanItemActionsRow item={item} actions={actions} />
+      <PlanItemActionsRow item={item} actions={actions} deleteButtonProps={deleteHold.buttonProps} />
     </li>
   );
 }
