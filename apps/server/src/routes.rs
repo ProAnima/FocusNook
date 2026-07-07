@@ -422,7 +422,7 @@ async fn exchange(
         }
     }
 
-    let last_pulled_hlc = if migrated_legacy_scope {
+    let last_pulled_hlc = if migrated_legacy_scope || request.profile_id != canonical_profile_id {
         None
     } else {
         request.last_pulled_hlc.as_deref()
