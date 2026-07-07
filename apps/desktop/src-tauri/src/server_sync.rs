@@ -11,6 +11,7 @@ const SERVER_SYNC_KEYRING_SERVICE: &str = "com.proanima.focusnook.server-sync";
 const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
 const MAX_OPS_PER_EXCHANGE: usize = 100;
 const MAX_EXCHANGE_ROUNDS: usize = 20;
+const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -716,27 +717,53 @@ async fn upload_pending_blobs(
         if pending.is_empty() {
             Vec::new()
         } else {
-            let media_key = credentials.media_key.as_deref().ok_or_else(|| {
-                "server sync media key is missing; sign in again to enable encrypted attachments"
-                    .to_string()
-            })?;
-            pending
-                .iter()
-                .map(|record| {
-                    sync_blobs::upload_request(
+            let Some(media_key) = credentials.media_key.as_deref() else {
+                eprintln!(
+                    "server-sync: media key is missing, deferring {} pending blob upload(s)",
+                    pending.len()
+                );
+                return Ok(());
+            };
+            let mut prepared = Vec::new();
+            for record in pending {
+                if !audio_dir.join(&record.local_path).exists() {
+                    sync_blobs::mark_missing_upload_deferred(
                         &conn,
+                        local_profile_id,
+                        &record.blob_id,
+                    )?;
+                    eprintln!(
+                        "server-sync: blob {} has no local file, treating it as download-only",
+                        record.blob_id
+                    );
+                    continue;
+                }
+                match sync_blobs::upload_request(
+                    &conn,
                         local_profile_id,
                         remote_profile_id,
                         audio_dir,
                         audio_key,
                         media_key,
-                        record,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?
+                    &record,
+                ) {
+                    Ok(request) => prepared.push(request),
+                    Err(err) => eprintln!(
+                        "server-sync: deferring blob upload {} because it cannot be prepared: {err}",
+                        record.blob_id
+                    ),
+                }
+            }
+            prepared
         }
     };
-    let uploaded = upload_prepared_blobs(credentials, prepared_uploads).await?;
+    let uploaded = match upload_prepared_blobs(credentials, prepared_uploads).await {
+        Ok(uploaded) => uploaded,
+        Err(err) => {
+            eprintln!("server-sync: blob upload lane failed, continuing operation sync: {err}");
+            return Ok(());
+        }
+    };
     if !uploaded.is_empty() {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         for (blob_id, sha256, size_bytes) in uploaded {
@@ -905,7 +932,7 @@ fn apply_note(
             )
             .map_err(|e| e.to_string())?;
             if let Some(filename) = audio_path {
-                sync_blobs::ensure_audio_blob(conn, profile_id, filename)?;
+                sync_blobs::ensure_downloadable_audio_blob(conn, profile_id, filename)?;
             }
             Ok(())
         }
@@ -962,7 +989,7 @@ fn apply_reminder(
             )
             .map_err(|e| e.to_string())?;
             if let Some(filename) = audio_path {
-                sync_blobs::ensure_audio_blob(conn, profile_id, filename)?;
+                sync_blobs::ensure_downloadable_audio_blob(conn, profile_id, filename)?;
             }
             Ok(())
         }
@@ -1161,26 +1188,40 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         missing_blobs.sort();
         missing_blobs.dedup();
         if !missing_blobs.is_empty() {
-            let media_key = credentials.media_key.as_deref().ok_or_else(|| {
-                "server sync media key is missing; sign in again to enable encrypted attachments"
-                    .to_string()
-            })?;
-            for blob_id in missing_blobs {
-                let Some(downloaded) =
-                    download_blob(&credentials, &remote_profile_id, &blob_id).await?
-                else {
-                    continue;
-                };
-                let conn = db.0.lock().map_err(|e| e.to_string())?;
-                sync_blobs::materialize_download(
-                    &conn,
-                    &profile_id,
-                    &audio_dir,
-                    audio_key.as_deref(),
-                    media_key,
-                    &blob_id,
-                    &downloaded,
-                )?;
+            if let Some(media_key) = credentials.media_key.as_deref() {
+                for blob_id in missing_blobs {
+                    let downloaded = match download_blob(&credentials, &remote_profile_id, &blob_id)
+                        .await
+                    {
+                        Ok(Some(downloaded)) => downloaded,
+                        Ok(None) => continue,
+                        Err(err) => {
+                            eprintln!(
+                                "server-sync: blob download {blob_id} failed, operation sync continues: {err}"
+                            );
+                            continue;
+                        }
+                    };
+                    let conn = db.0.lock().map_err(|e| e.to_string())?;
+                    if let Err(err) = sync_blobs::materialize_download(
+                        &conn,
+                        &profile_id,
+                        &audio_dir,
+                        audio_key.as_deref(),
+                        media_key,
+                        &blob_id,
+                        &downloaded,
+                    ) {
+                        eprintln!(
+                            "server-sync: blob materialize {blob_id} failed, operation sync continues: {err}"
+                        );
+                    }
+                }
+            } else {
+                eprintln!(
+                    "server-sync: media key is missing, deferring {} blob download(s)",
+                    missing_blobs.len()
+                );
             }
         }
 
@@ -1232,7 +1273,7 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
 pub fn spawn_periodic_best_effort(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(PERIODIC_SYNC_INTERVAL).await;
             spawn_best_effort(app.clone());
         }
     });

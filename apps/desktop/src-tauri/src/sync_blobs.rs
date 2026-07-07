@@ -41,6 +41,25 @@ pub fn ensure_audio_blob(
     upsert_local_blob(conn, profile_id, filename, filename, AUDIO_WEBM)
 }
 
+pub fn ensure_downloadable_audio_blob(
+    conn: &Connection,
+    profile_id: &str,
+    filename: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO sync_blobs
+            (profile_id, blob_id, local_path, content_type, uploaded_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))
+         ON CONFLICT(profile_id, blob_id) DO UPDATE SET
+           local_path = excluded.local_path,
+           content_type = excluded.content_type,
+           uploaded_at = COALESCE(sync_blobs.uploaded_at, excluded.uploaded_at)",
+        params![profile_id, filename, filename, AUDIO_WEBM],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn upsert_local_blob(
     conn: &Connection,
     profile_id: &str,
@@ -168,6 +187,21 @@ pub fn mark_uploaded(
          SET sha256 = ?1, size_bytes = ?2, uploaded_at = datetime('now')
          WHERE profile_id = ?3 AND blob_id = ?4",
         params![sha256, size_bytes, profile_id, blob_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn mark_missing_upload_deferred(
+    conn: &Connection,
+    profile_id: &str,
+    blob_id: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE sync_blobs
+         SET uploaded_at = COALESCE(uploaded_at, datetime('now'))
+         WHERE profile_id = ?1 AND blob_id = ?2",
+        params![profile_id, blob_id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -318,5 +352,50 @@ mod tests {
         assert_eq!(first.profile_id, "remote-profile");
         assert!(!first.bytes_base64.contains("voice"));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn downloadable_remote_audio_is_not_treated_as_a_pending_upload() {
+        let conn = conn();
+
+        ensure_downloadable_audio_blob(&conn, "profile", "remote-voice.webm").unwrap();
+
+        assert!(pending_uploads(&conn, "profile").unwrap().is_empty());
+        let uploaded_at: Option<String> = conn
+            .query_row(
+                "SELECT uploaded_at FROM sync_blobs WHERE profile_id = 'profile' AND blob_id = 'remote-voice.webm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let downloaded_at: Option<String> = conn
+            .query_row(
+                "SELECT downloaded_at FROM sync_blobs WHERE profile_id = 'profile' AND blob_id = 'remote-voice.webm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert!(uploaded_at.is_some());
+        assert!(downloaded_at.is_none());
+    }
+
+    #[test]
+    fn missing_local_upload_can_be_deferred_without_marking_downloaded() {
+        let conn = conn();
+        ensure_audio_blob(&conn, "profile", "missing-voice.webm").unwrap();
+        assert_eq!(pending_uploads(&conn, "profile").unwrap().len(), 1);
+
+        mark_missing_upload_deferred(&conn, "profile", "missing-voice.webm").unwrap();
+
+        assert!(pending_uploads(&conn, "profile").unwrap().is_empty());
+        let downloaded_at: Option<String> = conn
+            .query_row(
+                "SELECT downloaded_at FROM sync_blobs WHERE profile_id = 'profile' AND blob_id = 'missing-voice.webm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(downloaded_at.is_none());
     }
 }
