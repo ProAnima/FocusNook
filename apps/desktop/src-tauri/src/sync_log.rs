@@ -152,6 +152,21 @@ impl HlcClock {
             device_id: self.device_id.clone(),
         })
     }
+
+    pub fn observe(&mut self, conn: &Connection, remote: &Hlc) -> rusqlite::Result<()> {
+        if remote.millis > self.last_millis
+            || (remote.millis == self.last_millis && remote.counter > self.last_counter)
+        {
+            self.last_millis = remote.millis;
+            self.last_counter = remote.counter;
+            conn.execute(
+                "INSERT INTO sync_clock_state (id, last_millis, last_counter) VALUES (0, ?1, ?2)
+                 ON CONFLICT(id) DO UPDATE SET last_millis = excluded.last_millis, last_counter = excluded.last_counter",
+                params![self.last_millis, self.last_counter],
+            )?;
+        }
+        Ok(())
+    }
 }
 
 // Раздел 9 ТЗ: минимальный device_id — только чтобы у HLC был tie-breaker
@@ -357,6 +372,21 @@ mod tests {
 
         assert_eq!(hlc.millis, far_future);
         assert_eq!(hlc.counter, 6);
+    }
+
+    #[test]
+    fn hlc_clock_observes_remote_operations_before_next_local_tick() {
+        let mut conn = setup_conn();
+        let remote = Hlc::parse("2030-01-01T00:00:00.000Z-0042-remote-device").unwrap();
+        let mut clock = HlcClock::load(&conn, "local-device".to_string()).unwrap();
+
+        clock.observe(&conn, &remote).unwrap();
+        let tx = conn.transaction().unwrap();
+        let next = clock.next(&tx).unwrap();
+        tx.commit().unwrap();
+
+        assert!(next > remote);
+        assert_eq!(next.device_id(), "local-device");
     }
 
     #[test]

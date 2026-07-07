@@ -885,6 +885,39 @@ fn insert_remote_operation(
     Ok(())
 }
 
+fn latest_entity_hlc(
+    conn: &Connection,
+    profile_id: &str,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT MAX(hlc)
+         FROM sync_operations
+         WHERE profile_id = ?1 AND entity_type = ?2 AND entity_id = ?3",
+        params![profile_id, entity_type, entity_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn operation_is_stale_for_entity(
+    conn: &Connection,
+    profile_id: &str,
+    operation: &RemoteOperation,
+) -> Result<bool, String> {
+    let latest = latest_entity_hlc(
+        conn,
+        profile_id,
+        &operation.entity_type,
+        &operation.entity_id,
+    )?;
+    Ok(latest
+        .as_deref()
+        .map(|hlc| hlc >= operation.hlc.as_str())
+        .unwrap_or(false))
+}
+
 fn string_field<'a>(patch: &'a Value, key: &str) -> Option<&'a str> {
     patch.get(key).and_then(Value::as_str)
 }
@@ -1108,6 +1141,10 @@ fn apply_remote_operation(
     if operation_exists(conn, profile_id, &operation.operation_id)? {
         return Ok(());
     }
+    if operation_is_stale_for_entity(conn, profile_id, operation)? {
+        insert_remote_operation(conn, profile_id, operation)?;
+        return Ok(());
+    }
 
     let patch = serde_json::from_str::<Value>(&operation.payload_ciphertext)
         .map_err(|e| format!("remote operation payload is invalid json: {e}"))?;
@@ -1124,6 +1161,7 @@ fn apply_remote_operation(
 fn apply_exchange_response(
     app: &tauri::AppHandle,
     conn: &Connection,
+    hlc_state: &sync_log::HlcClockState,
     profile_id: &str,
     credentials: &ServerSyncCredentials,
     sent_operation_ids: &[String],
@@ -1136,6 +1174,14 @@ fn apply_exchange_response(
     let mut confirmed_pull_hlc = None;
     for operation in &response.operations {
         apply_remote_operation(conn, profile_id, &credentials.device_id, operation)?;
+        let parsed_hlc = sync_log::Hlc::parse(&operation.hlc)
+            .ok_or_else(|| format!("remote operation has invalid hlc: {}", operation.hlc))?;
+        hlc_state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .observe(conn, &parsed_hlc)
+            .map_err(|e| e.to_string())?;
         confirmed_pull_hlc = Some(operation.hlc.clone());
         if operation.device_id != credentials.device_id {
             if let Some(blob_id) = audio_blob_id_from_operation(operation) {
@@ -1191,6 +1237,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     let db = app.state::<crate::db::Db>();
     let config = app.state::<config::SyncProvidersConfig>();
     let profiles_state = app.state::<profiles::ProfilesState>();
+    let hlc_state = app.state::<sync_log::HlcClockState>();
     let audio_key_state = app.state::<crate::AudioKeyState>();
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let configured = endpoint_from_config(&config).is_ok();
@@ -1265,6 +1312,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             apply_exchange_response(
                 &app,
                 &conn,
+                &hlc_state,
                 &profile_id,
                 &credentials,
                 &sent_operation_ids,
@@ -1876,6 +1924,104 @@ mod tests {
         assert_eq!(title, "Call");
         assert_eq!(op_count, 1);
         assert_eq!(synced_count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn stale_remote_update_does_not_overwrite_newer_local_plan_item() -> Result<(), String> {
+        let conn = sync_test_conn();
+        conn.execute(
+            "INSERT INTO plan_items
+                (id, title, status, progress_percent, plan_date, created_at)
+             VALUES ('task-1', 'Call', 'done', NULL, '2026-07-07', datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sync_operations
+                (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+                 schema_version, created_at, synced_at)
+             VALUES
+                ('local-newer-op', 'profile-1', 'phone-device', 'plan_item', 'task-1', 'update',
+                 '{\"status\":\"done\"}', '2026-07-07T10:01:00.000Z-0000-phone-device',
+                 1, datetime('now'), NULL)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        let stale_remote = RemoteOperation {
+            device_id: "desktop-device".to_string(),
+            entity_id: "task-1".to_string(),
+            entity_type: "plan_item".to_string(),
+            hlc: "2026-07-07T10:00:00.000Z-0000-desktop-device".to_string(),
+            op: "update".to_string(),
+            operation_id: "remote-older-op".to_string(),
+            payload_ciphertext: serde_json::json!({ "status": "open" }).to_string(),
+            schema_version: 1,
+        };
+
+        apply_remote_operation(&conn, "profile-1", "phone-device", &stale_remote)?;
+
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM plan_items WHERE id = 'task-1'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let stored_remote: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sync_operations WHERE operation_id = 'remote-older-op' AND synced_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        assert_eq!(status, "done");
+        assert_eq!(stored_remote, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn newer_remote_delete_wins_over_older_local_plan_item() -> Result<(), String> {
+        let conn = sync_test_conn();
+        conn.execute(
+            "INSERT INTO plan_items
+                (id, title, status, progress_percent, plan_date, created_at)
+             VALUES ('task-1', 'Call', 'open', NULL, '2026-07-07', datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sync_operations
+                (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+                 schema_version, created_at, synced_at)
+             VALUES
+                ('local-older-op', 'profile-1', 'phone-device', 'plan_item', 'task-1', 'update',
+                 '{\"status\":\"open\"}', '2026-07-07T10:00:00.000Z-0000-phone-device',
+                 1, datetime('now'), datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        let newer_delete = RemoteOperation {
+            device_id: "desktop-device".to_string(),
+            entity_id: "task-1".to_string(),
+            entity_type: "plan_item".to_string(),
+            hlc: "2026-07-07T10:02:00.000Z-0000-desktop-device".to_string(),
+            op: "delete".to_string(),
+            operation_id: "remote-newer-delete".to_string(),
+            payload_ciphertext: serde_json::json!({}).to_string(),
+            schema_version: 1,
+        };
+
+        apply_remote_operation(&conn, "profile-1", "phone-device", &newer_delete)?;
+
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM plan_items WHERE id = 'task-1'", [], |row| {
+                row.get(0)
+            })
+            .map_err(|e| e.to_string())?;
+
+        assert_eq!(remaining, 0);
         Ok(())
     }
 }
