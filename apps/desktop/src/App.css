@@ -2186,6 +2186,17 @@ textarea {
   align-items: center;
 }
 
+.server-account-repair {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.account-sync-summary.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+}
+
 .server-account-form {
   grid-column: 1 / -1;
   display: grid;

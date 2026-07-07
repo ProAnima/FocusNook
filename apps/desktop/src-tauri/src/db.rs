@@ -74,6 +74,10 @@ const MIGRATIONS: &[&str] = &[
     last_pulled_hlc TEXT,
     updated_at TEXT NOT NULL
 )",
+    "CREATE TABLE IF NOT EXISTS sync_reconcile_state (
+    profile_id TEXT PRIMARY KEY,
+    last_reconciled_at TEXT NOT NULL
+)",
     "CREATE TABLE IF NOT EXISTS sync_blobs (
     profile_id TEXT NOT NULL,
     blob_id TEXT NOT NULL,

@@ -14,6 +14,7 @@ const MAX_EXCHANGE_ROUNDS: usize = 20;
 const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const SERVER_EVENT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 const SERVER_EVENT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
+const FULL_RECONCILE_INTERVAL_SECONDS: i64 = 15 * 60;
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -43,6 +44,7 @@ pub struct ServerSyncStatus {
     connected: bool,
     display_name: Option<String>,
     endpoint: Option<String>,
+    media_ready: bool,
     message: Option<String>,
 }
 
@@ -237,6 +239,10 @@ fn status_for_profile(
         display_name: credentials
             .as_ref()
             .and_then(|value| value.display_name.clone()),
+        media_ready: credentials
+            .as_ref()
+            .and_then(|value| value.media_key.as_ref())
+            .is_some(),
         endpoint: credentials.map(|value| value.endpoint),
         message,
     })
@@ -494,6 +500,34 @@ fn store_last_pulled_hlc(
            last_pulled_hlc = excluded.last_pulled_hlc,
            updated_at = datetime('now')",
         params![profile_id, last_pulled],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn should_run_full_reconcile(conn: &Connection, profile_id: &str) -> Result<bool, String> {
+    let elapsed_seconds: Option<i64> = conn
+        .query_row(
+            "SELECT CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', last_reconciled_at) AS INTEGER)
+             FROM sync_reconcile_state
+             WHERE profile_id = ?1",
+            params![profile_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(elapsed_seconds
+        .map(|seconds| seconds >= FULL_RECONCILE_INTERVAL_SECONDS)
+        .unwrap_or(true))
+}
+
+fn mark_full_reconciled(conn: &Connection, profile_id: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO sync_reconcile_state (profile_id, last_reconciled_at)
+         VALUES (?1, datetime('now'))
+         ON CONFLICT(profile_id) DO UPDATE SET
+           last_reconciled_at = excluded.last_reconciled_at",
+        params![profile_id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -806,11 +840,15 @@ async fn upload_pending_blobs(
     Ok(())
 }
 
-fn operation_exists(conn: &Connection, operation_id: &str) -> Result<bool, String> {
+fn operation_exists(
+    conn: &Connection,
+    profile_id: &str,
+    operation_id: &str,
+) -> Result<bool, String> {
     let existing: Option<String> = conn
         .query_row(
-            "SELECT operation_id FROM sync_operations WHERE operation_id = ?1",
-            params![operation_id],
+            "SELECT operation_id FROM sync_operations WHERE profile_id = ?1 AND operation_id = ?2",
+            params![profile_id, operation_id],
             |row| row.get(0),
         )
         .optional()
@@ -823,8 +861,11 @@ fn insert_remote_operation(
     profile_id: &str,
     operation: &RemoteOperation,
 ) -> Result<(), String> {
+    if operation_exists(conn, profile_id, &operation.operation_id)? {
+        return Ok(());
+    }
     conn.execute(
-        "INSERT OR IGNORE INTO sync_operations
+        "INSERT INTO sync_operations
             (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
              schema_version, created_at, synced_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'), datetime('now'))",
@@ -1064,7 +1105,7 @@ fn apply_remote_operation(
         insert_remote_operation(conn, profile_id, operation)?;
         return Ok(());
     }
-    if operation_exists(conn, &operation.operation_id)? {
+    if operation_exists(conn, profile_id, &operation.operation_id)? {
         return Ok(());
     }
 
@@ -1092,8 +1133,10 @@ fn apply_exchange_response(
     let _duplicates = response.duplicate_count;
     mark_synced(conn, sent_operation_ids)?;
     let mut missing_blobs = Vec::new();
+    let mut confirmed_pull_hlc = None;
     for operation in &response.operations {
         apply_remote_operation(conn, profile_id, &credentials.device_id, operation)?;
+        confirmed_pull_hlc = Some(operation.hlc.clone());
         if operation.device_id != credentials.device_id {
             if let Some(blob_id) = audio_blob_id_from_operation(operation) {
                 missing_blobs.push(blob_id);
@@ -1101,7 +1144,7 @@ fn apply_exchange_response(
         }
         reconcile_remote_reminder_alarm(app, conn, &credentials.device_id, operation)?;
     }
-    Ok((response.next_pull_hlc, missing_blobs))
+    Ok((confirmed_pull_hlc.or(response.next_pull_hlc), missing_blobs))
 }
 
 fn reconcile_remote_reminder_alarm(
@@ -1171,6 +1214,12 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         )?;
     }
 
+    let mut full_reconcile_active = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        should_run_full_reconcile(&conn, &remote_profile_id)?
+    };
+    let mut full_reconcile_cursor = None;
+
     for _ in 0..MAX_EXCHANGE_ROUNDS {
         upload_pending_blobs(
             &db,
@@ -1184,7 +1233,11 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
 
         let (last_pulled, operations) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
-            let last_pulled = last_pulled_hlc(&conn, &remote_profile_id)?;
+            let last_pulled = if full_reconcile_active {
+                full_reconcile_cursor.clone()
+            } else {
+                last_pulled_hlc(&conn, &remote_profile_id)?
+            };
             let operations = unsynced_operations(&conn, &profile_id)?;
             (last_pulled, operations)
         };
@@ -1260,6 +1313,13 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
 
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
+        if full_reconcile_active {
+            full_reconcile_cursor = next_pull_hlc.clone();
+            if !pulled_full_page {
+                mark_full_reconciled(&conn, &remote_profile_id)?;
+                full_reconcile_active = false;
+            }
+        }
 
         if !sent_full_page && !pulled_full_page {
             return status_for_profile(Some(&conn), &profile_id, configured, None);
@@ -1570,6 +1630,14 @@ mod tests {
         )
         .unwrap();
         conn.execute(
+            "CREATE TABLE sync_reconcile_state (
+                profile_id TEXT PRIMARY KEY,
+                last_reconciled_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "CREATE TABLE sync_blobs (
                 profile_id TEXT NOT NULL,
                 blob_id TEXT NOT NULL,
@@ -1614,6 +1682,7 @@ mod tests {
                 connected: true,
                 display_name: None,
                 endpoint: Some("https://sync.example.com".to_string()),
+                media_ready: false,
                 message: None
             }
         );
@@ -1722,6 +1791,44 @@ mod tests {
         assert!(local_synced.is_none());
         assert!(remote_synced.is_some());
         assert!(blob_uploaded.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn full_reconcile_is_due_until_marked_recently() -> Result<(), String> {
+        let conn = sync_test_conn();
+
+        assert!(should_run_full_reconcile(&conn, "account-user-id")?);
+        mark_full_reconciled(&conn, "account-user-id")?;
+        assert!(!should_run_full_reconcile(&conn, "account-user-id")?);
+
+        conn.execute(
+            "UPDATE sync_reconcile_state
+             SET last_reconciled_at = datetime('now', '-20 minutes')
+             WHERE profile_id = 'account-user-id'",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(should_run_full_reconcile(&conn, "account-user-id")?);
+        Ok(())
+    }
+
+    #[test]
+    fn operation_existence_is_scoped_to_profile() -> Result<(), String> {
+        let conn = sync_test_conn();
+        conn.execute(
+            "INSERT INTO sync_operations
+                (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+                 schema_version, created_at, synced_at)
+             VALUES
+                ('shared-op-id', 'other-profile', 'phone-device', 'note', 'note-1', 'create', '{}',
+                 '2026-07-07T10:00:00.000Z-0000-phone-device', 1, datetime('now'), datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        assert!(operation_exists(&conn, "other-profile", "shared-op-id")?);
+        assert!(!operation_exists(&conn, "active-profile", "shared-op-id")?);
         Ok(())
     }
 

@@ -99,6 +99,7 @@ export interface ServerSyncStatus {
   connected: boolean;
   displayName: string | null;
   endpoint: string | null;
+  mediaReady: boolean;
   message: string | null;
 }
 

@@ -80,6 +80,7 @@ vi.mock("./shared/commands", () => {
             connected: false,
             displayName: null,
             endpoint: null,
+            mediaReady: false,
             message: null,
           }),
         syncNow: reject,

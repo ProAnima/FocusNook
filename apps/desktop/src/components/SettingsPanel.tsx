@@ -397,9 +397,11 @@ function ServerSyncRow() {
   const [connected, setConnected] = useState(false);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [mediaReady, setMediaReady] = useState(false);
   const [savedEndpoint, setSavedEndpoint] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [repairPassword, setRepairPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -415,6 +417,7 @@ function ServerSyncRow() {
         setConnected(status.connected);
         setAccountEmail(status.accountEmail);
         setDisplayName(status.displayName);
+        setMediaReady(status.mediaReady);
         setSavedEndpoint(status.endpoint);
       })
       .catch(() => {
@@ -422,6 +425,7 @@ function ServerSyncRow() {
         setConnected(false);
         setAccountEmail(null);
         setDisplayName(null);
+        setMediaReady(false);
         setSavedEndpoint(null);
       });
   }, []);
@@ -440,6 +444,7 @@ function ServerSyncRow() {
         setConnected(false);
         setAccountEmail(null);
         setDisplayName(null);
+        setMediaReady(false);
       } else {
         const nextEmail = email.trim();
         const nextName = name.trim();
@@ -451,9 +456,34 @@ function ServerSyncRow() {
         setConnected(status.connected);
         setAccountEmail(status.accountEmail);
         setDisplayName(status.displayName);
+        setMediaReady(status.mediaReady);
         setSavedEndpoint(status.endpoint);
         setPassword("");
       }
+      refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMediaRepair() {
+    const nextEmail = accountEmail || email.trim();
+    if (!nextEmail || !repairPassword) {
+      return;
+    }
+    setBusy(true);
+    setError(false);
+    try {
+      const status = await commands.serverSync.login(nextEmail, repairPassword);
+      setAvailable(status.available);
+      setConnected(status.connected);
+      setAccountEmail(status.accountEmail);
+      setDisplayName(status.displayName);
+      setMediaReady(status.mediaReady);
+      setSavedEndpoint(status.endpoint);
+      setRepairPassword("");
       refresh();
     } catch {
       setError(true);
@@ -478,6 +508,29 @@ function ServerSyncRow() {
             {busy ? t("settings.syncConnecting") : t("settings.syncDisconnect")}
           </button>
         </div>
+        {!mediaReady && (
+          <div className="server-account-repair">
+            <div className="account-sync-summary is-warning">
+              <KeyRound size={15} />
+              <div>
+                <span>{t("settings.syncServerMediaLocked")}</span>
+                <p>{t("settings.syncServerMediaHint")}</p>
+              </div>
+            </div>
+            <input
+              className="server-sync-input"
+              value={repairPassword}
+              onChange={(event) => setRepairPassword(event.target.value)}
+              placeholder={t("settings.syncServerPassword")}
+              autoComplete="current-password"
+              type="password"
+            />
+            <button className="preset-button" onClick={() => void handleMediaRepair()} disabled={busy || !repairPassword}>
+              {busy ? t("settings.syncConnecting") : t("settings.syncServerRepairMedia")}
+            </button>
+            {error && <p className="note-error">{t("settings.syncServerAuthError")}</p>}
+          </div>
+        )}
       </div>
     );
   }

@@ -51,6 +51,7 @@ const {
     connected: false,
     displayName: null,
     endpoint: null,
+    mediaReady: false,
     message: null,
   }),
   serverSyncLogin: vi.fn().mockResolvedValue({
@@ -60,6 +61,7 @@ const {
     connected: true,
     displayName: "User",
     endpoint: "https://focus.proanima.net",
+    mediaReady: true,
     message: null,
   }),
   serverSyncRegister: vi.fn().mockResolvedValue({
@@ -69,6 +71,7 @@ const {
     connected: true,
     displayName: "User",
     endpoint: "https://focus.proanima.net",
+    mediaReady: true,
     message: null,
   }),
   serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
