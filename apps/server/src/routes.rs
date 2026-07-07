@@ -4,7 +4,7 @@ use crate::auth::{issue_token, require_admin, require_device, require_user};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use axum::extract::DefaultBodyLimit;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::routing::{get, post};
@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> axum::Router {
         .route("/v1/accounts/login", post(login_account))
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/exchange", post(exchange))
+        .route("/v1/sync/events", get(wait_for_sync_event))
         .route("/v1/blobs", post(upload_blob))
         .route("/v1/blobs/:profile_id/:blob_id", get(download_blob))
         .layer(DefaultBodyLimit::disable())
@@ -309,6 +310,31 @@ async fn register_device(
     }))
 }
 
+async fn wait_for_sync_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SyncEventQuery>,
+) -> AppResult<Json<SyncEventResponse>> {
+    let auth = require_device(&headers, &state).await?;
+    let timeout_ms = query.timeout_ms.unwrap_or(25_000).clamp(1_000, 30_000);
+    let event = state
+        .sync_events
+        .wait(auth.user_id, std::time::Duration::from_millis(timeout_ms))
+        .await;
+    Ok(Json(match event {
+        Some(event) => SyncEventResponse {
+            changed: true,
+            reason: Some(event.reason),
+            sequence: event.sequence,
+        },
+        None => SyncEventResponse {
+            changed: false,
+            reason: None,
+            sequence: 0,
+        },
+    }))
+}
+
 async fn upsert_device_token(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     state: &AppState,
@@ -444,6 +470,9 @@ async fn exchange(
         .last()
         .map(|operation| operation.hlc.clone())
         .or(request.last_pulled_hlc);
+    if accepted_count > 0 {
+        state.sync_events.notify(auth.user_id, "operation");
+    }
 
     Ok(Json(SyncExchangeResponse {
         accepted_count,
@@ -503,6 +532,7 @@ async fn upload_blob(
         .await?;
     }
     record_traffic(&state, auth.user_id, bytes.len() as i64, 0).await?;
+    state.sync_events.notify(auth.user_id, "blob");
 
     Ok(Json(UploadBlobResponse {
         blob_id: request.blob_id,
@@ -1037,6 +1067,20 @@ struct SyncExchangeRequest {
     last_pulled_hlc: Option<String>,
     operations: Vec<ClientOperation>,
     profile_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncEventQuery {
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncEventResponse {
+    changed: bool,
+    reason: Option<String>,
+    sequence: u64,
 }
 
 #[derive(Clone, Deserialize)]

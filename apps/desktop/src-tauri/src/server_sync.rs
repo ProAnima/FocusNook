@@ -11,7 +11,9 @@ const SERVER_SYNC_KEYRING_SERVICE: &str = "com.proanima.focusnook.server-sync";
 const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
 const MAX_OPS_PER_EXCHANGE: usize = 100;
 const MAX_EXCHANGE_ROUNDS: usize = 20;
-const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const SERVER_EVENT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+const SERVER_EVENT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -388,6 +390,12 @@ struct UploadBlobResponse {
     size_bytes: i64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncEventResponse {
+    changed: bool,
+}
+
 async fn register_device(
     endpoint: &str,
     user_token: &str,
@@ -607,6 +615,31 @@ async fn exchange_with_server(
     }
     response
         .json::<SyncExchangeResponse>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn wait_for_server_event(
+    credentials: &ServerSyncCredentials,
+) -> Result<SyncEventResponse, String> {
+    let response = reqwest::Client::builder()
+        .timeout(SERVER_EVENT_WAIT_TIMEOUT + std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?
+        .get(format!(
+            "{}/v1/sync/events?timeoutMs={}",
+            credentials.endpoint,
+            SERVER_EVENT_WAIT_TIMEOUT.as_millis()
+        ))
+        .bearer_auth(&credentials.token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("sync event wait returned {}", response.status()));
+    }
+    response
+        .json::<SyncEventResponse>()
         .await
         .map_err(|e| e.to_string())
 }
@@ -1275,6 +1308,47 @@ pub fn spawn_periodic_best_effort(app: tauri::AppHandle) {
         loop {
             tokio::time::sleep(PERIODIC_SYNC_INTERVAL).await;
             spawn_best_effort(app.clone());
+        }
+    });
+}
+
+fn event_listener_credentials(
+    app: &tauri::AppHandle,
+) -> Result<Option<ServerSyncCredentials>, String> {
+    let db = app.state::<crate::db::Db>();
+    let profiles_state = app.state::<profiles::ProfilesState>();
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    load_credentials(Some(&conn), &profile_id)
+}
+
+pub fn spawn_server_event_listener(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let credentials = match event_listener_credentials(&app) {
+                Ok(credentials) => credentials,
+                Err(err) => {
+                    eprintln!("server-sync: cannot load event listener credentials: {err}");
+                    tokio::time::sleep(SERVER_EVENT_ERROR_BACKOFF).await;
+                    continue;
+                }
+            };
+
+            let Some(credentials) = credentials else {
+                tokio::time::sleep(PERIODIC_SYNC_INTERVAL).await;
+                continue;
+            };
+
+            match wait_for_server_event(&credentials).await {
+                Ok(event) if event.changed => {
+                    spawn_best_effort(app.clone());
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!("server-sync: event listener failed: {err}");
+                    tokio::time::sleep(SERVER_EVENT_ERROR_BACKOFF).await;
+                }
+            }
         }
     });
 }

@@ -6,6 +6,7 @@ mod crypto;
 mod error;
 mod routes;
 mod state;
+mod sync_events;
 
 use crate::config::Config;
 use crate::error::AppResult;

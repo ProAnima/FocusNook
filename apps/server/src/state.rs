@@ -3,6 +3,7 @@ use crate::admin_web::AdminWebState;
 use crate::config::Config;
 use crate::crypto::CryptoBox;
 use crate::error::AppResult;
+use crate::sync_events::SyncEventHub;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ pub struct AppState {
     pub account_auth: Arc<AccountAuthState>,
     pub crypto: Arc<CryptoBox>,
     pub pool: PgPool,
+    pub sync_events: Arc<SyncEventHub>,
     pub web_admin: Arc<AdminWebState>,
 }
 
@@ -31,6 +33,7 @@ impl AppState {
             account_auth: Arc::new(AccountAuthState::default()),
             crypto: Arc::new(crypto),
             pool,
+            sync_events: Arc::new(SyncEventHub::default()),
             web_admin: Arc::new(AdminWebState::default()),
         })
     }

@@ -1026,6 +1026,7 @@ pub fn run() {
             // блокирует обычную работу приложения без sync.
             app.manage(config::load(&data_dir));
             server_sync::spawn_best_effort(app.handle().clone());
+            server_sync::spawn_server_event_listener(app.handle().clone());
             server_sync::spawn_periodic_best_effort(app.handle().clone());
 
             spawn_bounds_watcher(app.handle().clone(), last_moved.clone());
