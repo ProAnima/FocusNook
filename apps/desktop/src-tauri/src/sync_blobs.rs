@@ -110,20 +110,27 @@ pub fn pending_uploads(conn: &Connection, profile_id: &str) -> Result<Vec<BlobRe
 
 pub fn upload_request(
     conn: &Connection,
-    profile_id: &str,
+    local_profile_id: &str,
+    remote_profile_id: &str,
     audio_dir: &Path,
     audio_key: Option<&str>,
     media_key: &str,
     record: &BlobRecord,
 ) -> Result<UploadBlobRequest, String> {
-    let bytes =
-        sync_ciphertext_for_upload(conn, profile_id, audio_dir, audio_key, media_key, record)?;
+    let bytes = sync_ciphertext_for_upload(
+        conn,
+        local_profile_id,
+        audio_dir,
+        audio_key,
+        media_key,
+        record,
+    )?;
     let sha256 = blob_crypto::sha256_hex(&bytes);
     Ok(UploadBlobRequest {
         blob_id: record.blob_id.clone(),
         bytes_base64: STANDARD.encode(bytes),
         content_type: record.content_type.clone(),
-        profile_id: profile_id.to_string(),
+        profile_id: remote_profile_id.to_string(),
         sha256,
     })
 }
@@ -286,10 +293,29 @@ mod tests {
             .unwrap();
         let media_key = blob_crypto::derive_media_key("a@example.com", "password");
 
-        let first = upload_request(&conn, "profile", &dir, None, &media_key, &record).unwrap();
-        let second = upload_request(&conn, "profile", &dir, None, &media_key, &record).unwrap();
+        let first = upload_request(
+            &conn,
+            "profile",
+            "remote-profile",
+            &dir,
+            None,
+            &media_key,
+            &record,
+        )
+        .unwrap();
+        let second = upload_request(
+            &conn,
+            "profile",
+            "remote-profile",
+            &dir,
+            None,
+            &media_key,
+            &record,
+        )
+        .unwrap();
 
         assert_eq!(first.bytes_base64, second.bytes_base64);
+        assert_eq!(first.profile_id, "remote-profile");
         assert!(!first.bytes_base64.contains("voice"));
         fs::remove_dir_all(&dir).unwrap();
     }

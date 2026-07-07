@@ -530,6 +530,43 @@ fn mark_synced(conn: &Connection, operation_ids: &[String]) -> Result<(), String
     Ok(())
 }
 
+fn server_profile_id(credentials: &ServerSyncCredentials, local_profile_id: &str) -> String {
+    credentials
+        .account_user_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(local_profile_id)
+        .to_string()
+}
+
+fn prepare_account_scope_if_needed(
+    conn: &Connection,
+    local_profile_id: &str,
+    remote_profile_id: &str,
+    local_device_id: &str,
+) -> Result<(), String> {
+    if local_profile_id == remote_profile_id || last_pulled_hlc(conn, remote_profile_id)?.is_some()
+    {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE sync_operations
+         SET synced_at = NULL
+         WHERE profile_id = ?1 AND device_id = ?2",
+        params![local_profile_id, local_device_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sync_blobs
+         SET uploaded_at = NULL
+         WHERE profile_id = ?1 AND deleted_at IS NULL",
+        params![local_profile_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn client_operation(operation: &LocalOperation) -> ClientOperation {
     ClientOperation {
         device_id: operation.device_id.clone(),
@@ -631,13 +668,14 @@ async fn download_blob(
 async fn upload_pending_blobs(
     db: &crate::db::Db,
     credentials: &ServerSyncCredentials,
-    profile_id: &str,
+    local_profile_id: &str,
+    remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
 ) -> Result<(), String> {
     let prepared_uploads = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let pending = sync_blobs::pending_uploads(&conn, profile_id)?;
+        let pending = sync_blobs::pending_uploads(&conn, local_profile_id)?;
         if pending.is_empty() {
             Vec::new()
         } else {
@@ -649,7 +687,13 @@ async fn upload_pending_blobs(
                 .iter()
                 .map(|record| {
                     sync_blobs::upload_request(
-                        &conn, profile_id, audio_dir, audio_key, media_key, record,
+                        &conn,
+                        local_profile_id,
+                        remote_profile_id,
+                        audio_dir,
+                        audio_key,
+                        media_key,
+                        record,
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -659,7 +703,7 @@ async fn upload_pending_blobs(
     if !uploaded.is_empty() {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         for (blob_id, sha256, size_bytes) in uploaded {
-            sync_blobs::mark_uploaded(&conn, profile_id, &blob_id, &sha256, size_bytes)?;
+            sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
         }
     }
     Ok(())
@@ -1018,12 +1062,24 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         load_credentials(Some(&conn), &profile_id)?
             .ok_or_else(|| "server sync account is not connected".to_string())?
     };
+    let remote_profile_id = server_profile_id(&credentials, &profile_id);
+
+    {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        prepare_account_scope_if_needed(
+            &conn,
+            &profile_id,
+            &remote_profile_id,
+            &credentials.device_id,
+        )?;
+    }
 
     for _ in 0..MAX_EXCHANGE_ROUNDS {
         upload_pending_blobs(
             &db,
             &credentials,
             &profile_id,
+            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -1031,7 +1087,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
 
         let (last_pulled, operations) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
-            let last_pulled = last_pulled_hlc(&conn, &profile_id)?;
+            let last_pulled = last_pulled_hlc(&conn, &remote_profile_id)?;
             let operations = unsynced_operations(&conn, &profile_id)?;
             (last_pulled, operations)
         };
@@ -1039,6 +1095,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             &db,
             &credentials,
             &profile_id,
+            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -1049,7 +1106,8 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             .map(|operation| operation.operation_id.clone())
             .collect::<Vec<_>>();
         let response =
-            exchange_with_server(&credentials, &profile_id, last_pulled, &operations).await?;
+            exchange_with_server(&credentials, &remote_profile_id, last_pulled, &operations)
+                .await?;
         let pulled_full_page = response.operations.len() == MAX_OPS_PER_EXCHANGE;
 
         let (next_pull_hlc, mut missing_blobs) = {
@@ -1071,7 +1129,8 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
                     .to_string()
             })?;
             for blob_id in missing_blobs {
-                let Some(downloaded) = download_blob(&credentials, &profile_id, &blob_id).await?
+                let Some(downloaded) =
+                    download_blob(&credentials, &remote_profile_id, &blob_id).await?
                 else {
                     continue;
                 };
@@ -1089,7 +1148,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         }
 
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        store_last_pulled_hlc(&conn, &profile_id, next_pull_hlc.as_deref())?;
+        store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
 
         if !sent_full_page && !pulled_full_page {
             return status_for_profile(Some(&conn), &profile_id, configured, None);
@@ -1340,6 +1399,33 @@ mod tests {
             [],
         )
         .unwrap();
+        conn.execute(
+            "CREATE TABLE sync_pull_state (
+                profile_id TEXT PRIMARY KEY,
+                last_pulled_hlc TEXT,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE sync_blobs (
+                profile_id TEXT NOT NULL,
+                blob_id TEXT NOT NULL,
+                local_path TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                sha256 TEXT,
+                size_bytes INTEGER,
+                sync_payload_base64 TEXT,
+                uploaded_at TEXT,
+                downloaded_at TEXT,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(profile_id, blob_id)
+            )",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -1399,6 +1485,83 @@ mod tests {
     #[test]
     fn deleting_missing_credentials_is_ok() -> Result<(), String> {
         delete_credentials(None, &unique_profile_id())
+    }
+
+    #[test]
+    fn account_credentials_use_user_id_as_shared_server_profile() {
+        let credentials = ServerSyncCredentials {
+            account_email: Some("user@example.com".to_string()),
+            account_user_id: Some("account-user-id".to_string()),
+            device_id: "desktop-device".to_string(),
+            display_name: Some("User".to_string()),
+            endpoint: "https://sync.example.com".to_string(),
+            media_key: Some("media-key".to_string()),
+            token: "token".to_string(),
+        };
+
+        assert_eq!(
+            server_profile_id(&credentials, "local-profile-id"),
+            "account-user-id"
+        );
+    }
+
+    #[test]
+    fn first_account_scope_requeues_local_device_operations_and_blobs() -> Result<(), String> {
+        let conn = sync_test_conn();
+        conn.execute(
+            "INSERT INTO sync_operations
+                (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+                 schema_version, created_at, synced_at)
+             VALUES
+                ('local-op', 'local-profile', 'desktop-device', 'note', 'note-1', 'create', '{}',
+                 '2026-07-07T10:00:00.000Z-0000-desktop-device', 1, datetime('now'), datetime('now')),
+                ('remote-op', 'local-profile', 'phone-device', 'note', 'note-2', 'create', '{}',
+                 '2026-07-07T10:01:00.000Z-0000-phone-device', 1, datetime('now'), datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sync_blobs
+                (profile_id, blob_id, local_path, content_type, uploaded_at, created_at)
+             VALUES
+                ('local-profile', 'voice.webm', 'voice.webm', 'audio/webm', datetime('now'), datetime('now'))",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        prepare_account_scope_if_needed(
+            &conn,
+            "local-profile",
+            "account-user-id",
+            "desktop-device",
+        )?;
+
+        let local_synced: Option<String> = conn
+            .query_row(
+                "SELECT synced_at FROM sync_operations WHERE operation_id = 'local-op'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let remote_synced: Option<String> = conn
+            .query_row(
+                "SELECT synced_at FROM sync_operations WHERE operation_id = 'remote-op'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let blob_uploaded: Option<String> = conn
+            .query_row(
+                "SELECT uploaded_at FROM sync_blobs WHERE blob_id = 'voice.webm'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        assert!(local_synced.is_none());
+        assert!(remote_synced.is_some());
+        assert!(blob_uploaded.is_none());
+        Ok(())
     }
 
     #[test]
