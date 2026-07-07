@@ -1,4 +1,5 @@
 use crate::audio_crypto;
+use crate::sync_blobs;
 use crate::sync_log::{self, HlcClock};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -115,6 +116,7 @@ pub fn create_audio(
         params![id, request.title, filename, request.trigger_at_utc],
     )
     .map_err(|e| e.to_string())?;
+    sync_blobs::ensure_audio_blob(&tx, request.profile_id, &filename)?;
     let hlc = clock.next(&tx).map_err(|e| e.to_string())?;
     sync_log::record_operation(
         &tx,
@@ -226,6 +228,7 @@ pub fn delete(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     if let Some(filename) = audio_path {
+        sync_blobs::mark_deleted(conn, profile_id, &filename)?;
         if let Err(e) = fs::remove_file(audio_dir.join(&filename)) {
             eprintln!("reminders: не удалось удалить аудиофайл {filename}: {e}");
         }
@@ -381,6 +384,24 @@ mod tests {
                 id INTEGER PRIMARY KEY CHECK (id = 0),
                 last_millis INTEGER NOT NULL,
                 last_counter INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE sync_blobs (
+                profile_id TEXT NOT NULL,
+                blob_id TEXT NOT NULL,
+                local_path TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                sha256 TEXT,
+                size_bytes INTEGER,
+                sync_payload_base64 TEXT,
+                uploaded_at TEXT,
+                downloaded_at TEXT,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(profile_id, blob_id)
             )",
             [],
         )

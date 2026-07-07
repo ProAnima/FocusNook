@@ -74,6 +74,21 @@ const MIGRATIONS: &[&str] = &[
     last_pulled_hlc TEXT,
     updated_at TEXT NOT NULL
 )",
+    "CREATE TABLE IF NOT EXISTS sync_blobs (
+    profile_id TEXT NOT NULL,
+    blob_id TEXT NOT NULL,
+    local_path TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    sha256 TEXT,
+    size_bytes INTEGER,
+    sync_payload_base64 TEXT,
+    uploaded_at TEXT,
+    downloaded_at TEXT,
+    deleted_at TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(profile_id, blob_id)
+)",
+    "CREATE INDEX IF NOT EXISTS idx_sync_blobs_pending_upload ON sync_blobs(profile_id, uploaded_at, deleted_at)",
 ];
 
 #[cfg(not(target_os = "android"))]
@@ -243,6 +258,7 @@ pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
     ensure_notes_group_column(&conn)?;
     ensure_reminders_audio_column(&conn)?;
     ensure_sync_operations_synced_at_column(&conn)?;
+    ensure_sync_blobs_columns(&conn)?;
     Ok(conn)
 }
 
@@ -342,6 +358,34 @@ fn ensure_sync_operations_synced_at_column(conn: &Connection) -> Result<(), Stri
     if !columns.iter().any(|name| name == "synced_at") {
         conn.execute("ALTER TABLE sync_operations ADD COLUMN synced_at TEXT", [])
             .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_sync_blobs_columns(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sync_blobs)")
+        .map_err(|e| e.to_string())?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    for (name, definition) in [
+        ("sha256", "TEXT"),
+        ("size_bytes", "INTEGER"),
+        ("sync_payload_base64", "TEXT"),
+        ("uploaded_at", "TEXT"),
+        ("downloaded_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            conn.execute(
+                &format!("ALTER TABLE sync_blobs ADD COLUMN {name} {definition}"),
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

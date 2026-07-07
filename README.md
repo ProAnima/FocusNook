@@ -102,6 +102,10 @@ FocusNook is designed as a local-first product with adapter-based sync:
 The app core must not depend on a specific provider. Sync is treated as a port,
 not as the center of the product.
 
+Attachment sync is documented separately in
+[docs/sync-attachments.md](docs/sync-attachments.md): voice recordings are the first supported
+binary payload, with the same contract reserved for future images and small text files.
+
 ## Architecture
 
 FocusNook follows a progressive local-first architecture:

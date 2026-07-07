@@ -1,5 +1,6 @@
 mod alerts;
 mod audio_crypto;
+mod blob_crypto;
 mod config;
 mod db;
 mod diagnostics;
@@ -10,6 +11,7 @@ mod profiles;
 mod reminders;
 mod server_sync;
 mod sync;
+mod sync_blobs;
 mod sync_log;
 mod sync_status;
 mod sync_tokens;

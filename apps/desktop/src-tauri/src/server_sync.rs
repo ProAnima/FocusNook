@@ -1,4 +1,4 @@
-use crate::{config, profiles, sync_log};
+use crate::{blob_crypto, config, profiles, sync_blobs, sync_log};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +25,8 @@ struct ServerSyncCredentials {
     endpoint: String,
     #[serde(default)]
     display_name: Option<String>,
+    #[serde(default)]
+    media_key: Option<String>,
     token: String,
 }
 
@@ -107,6 +109,7 @@ fn store_credentials(
     token: &str,
     device_id: &str,
     account: Option<&ServerAccountSession>,
+    media_key: Option<String>,
 ) -> Result<(), String> {
     let credentials = ServerSyncCredentials {
         account_email: account.map(|value| value.email.clone()),
@@ -114,6 +117,7 @@ fn store_credentials(
         device_id: normalize_token(device_id)?,
         display_name: account.map(|value| value.display_name.clone()),
         endpoint: normalize_endpoint(endpoint)?,
+        media_key,
         token: normalize_token(token)?,
     };
     let raw = serde_json::to_string(&credentials).map_err(|e| e.to_string())?;
@@ -272,6 +276,7 @@ pub fn connect_server_sync(
         &token,
         "manual-device",
         None,
+        None,
     )?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
@@ -372,6 +377,13 @@ struct RemoteOperation {
     operation_id: String,
     payload_ciphertext: String,
     schema_version: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadBlobResponse {
+    blob_id: String,
+    size_bytes: i64,
 }
 
 async fn register_device(
@@ -560,6 +572,61 @@ async fn exchange_with_server(
         .map_err(|e| e.to_string())
 }
 
+async fn upload_prepared_blobs(
+    credentials: &ServerSyncCredentials,
+    uploads: Vec<sync_blobs::UploadBlobRequest>,
+) -> Result<Vec<(String, String, i64)>, String> {
+    let client = reqwest::Client::new();
+    let mut uploaded = Vec::with_capacity(uploads.len());
+    for request in uploads {
+        let sha256 = request.sha256.clone();
+        let response = client
+            .post(format!("{}/v1/blobs", credentials.endpoint))
+            .bearer_auth(&credentials.token)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("sync blob upload returned {}", response.status()));
+        }
+        let body = response
+            .json::<UploadBlobResponse>()
+            .await
+            .map_err(|e| e.to_string())?;
+        uploaded.push((body.blob_id, sha256, body.size_bytes));
+    }
+    Ok(uploaded)
+}
+
+async fn download_blob(
+    credentials: &ServerSyncCredentials,
+    profile_id: &str,
+    blob_id: &str,
+) -> Result<Option<sync_blobs::DownloadBlobResponse>, String> {
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{}/v1/blobs/{}/{}",
+            credentials.endpoint, profile_id, blob_id
+        ))
+        .bearer_auth(&credentials.token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        eprintln!("server-sync: blob {blob_id} is missing on server, keeping metadata only");
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(format!("sync blob download returned {}", response.status()));
+    }
+    response
+        .json::<sync_blobs::DownloadBlobResponse>()
+        .await
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
 fn operation_exists(conn: &Connection, operation_id: &str) -> Result<bool, String> {
     let existing: Option<String> = conn
         .query_row(
@@ -610,6 +677,14 @@ fn nullable_string_field(patch: &Value, key: &str) -> Option<Option<String>> {
             value.as_str().map(str::to_string)
         }
     })
+}
+
+fn audio_blob_id_from_operation(operation: &RemoteOperation) -> Option<String> {
+    if !matches!(operation.entity_type.as_str(), "note" | "reminder") || operation.op == "delete" {
+        return None;
+    }
+    let patch = serde_json::from_str::<Value>(&operation.payload_ciphertext).ok()?;
+    string_field(&patch, "audioPath").map(str::to_string)
 }
 
 fn apply_plan_item(
@@ -687,7 +762,12 @@ fn apply_note_group(
     .map_err(|e| e.to_string())
 }
 
-fn apply_note(conn: &Connection, operation: &RemoteOperation, patch: &Value) -> Result<(), String> {
+fn apply_note(
+    conn: &Connection,
+    profile_id: &str,
+    operation: &RemoteOperation,
+    patch: &Value,
+) -> Result<(), String> {
     match operation.op.as_str() {
         "create" => {
             let kind = string_field(patch, "kind").unwrap_or("text");
@@ -704,6 +784,11 @@ fn apply_note(conn: &Connection, operation: &RemoteOperation, patch: &Value) -> 
                    group_id = excluded.group_id",
                 params![operation.entity_id, body, kind, audio_path, group_id],
             )
+            .map_err(|e| e.to_string())?;
+            if let Some(filename) = audio_path {
+                sync_blobs::ensure_audio_blob(conn, profile_id, filename)?;
+            }
+            Ok(())
         }
         "update" => {
             if let Some(body) = string_field(patch, "body") {
@@ -720,38 +805,48 @@ fn apply_note(conn: &Connection, operation: &RemoteOperation, patch: &Value) -> 
                 )
                 .map_err(|e| e.to_string())?;
             }
-            Ok(0)
+            Ok(())
         }
-        "delete" => conn.execute(
-            "DELETE FROM notes WHERE id = ?1",
-            params![operation.entity_id],
-        ),
-        _ => Ok(0),
+        "delete" => conn
+            .execute(
+                "DELETE FROM notes WHERE id = ?1",
+                params![operation.entity_id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        _ => Ok(()),
     }
-    .map(|_| ())
-    .map_err(|e| e.to_string())
 }
 
 fn apply_reminder(
     conn: &Connection,
+    profile_id: &str,
     operation: &RemoteOperation,
     patch: &Value,
 ) -> Result<(), String> {
     match operation.op.as_str() {
-        "create" => conn.execute(
-            "INSERT INTO reminders (id, title, audio_path, trigger_at_utc, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, 'scheduled', datetime('now'))
-             ON CONFLICT(id) DO UPDATE SET
-               title = excluded.title,
-               audio_path = excluded.audio_path,
-               trigger_at_utc = excluded.trigger_at_utc",
-            params![
-                operation.entity_id,
-                string_field(patch, "title").unwrap_or(""),
-                string_field(patch, "audioPath"),
-                string_field(patch, "triggerAtUtc").unwrap_or("1970-01-01T00:00:00.000Z"),
-            ],
-        ),
+        "create" => {
+            let audio_path = string_field(patch, "audioPath");
+            conn.execute(
+                "INSERT INTO reminders (id, title, audio_path, trigger_at_utc, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 'scheduled', datetime('now'))
+                 ON CONFLICT(id) DO UPDATE SET
+                   title = excluded.title,
+                   audio_path = excluded.audio_path,
+                   trigger_at_utc = excluded.trigger_at_utc",
+                params![
+                    operation.entity_id,
+                    string_field(patch, "title").unwrap_or(""),
+                    audio_path,
+                    string_field(patch, "triggerAtUtc").unwrap_or("1970-01-01T00:00:00.000Z"),
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            if let Some(filename) = audio_path {
+                sync_blobs::ensure_audio_blob(conn, profile_id, filename)?;
+            }
+            Ok(())
+        }
         "update" => {
             if let Some(status) = string_field(patch, "status") {
                 conn.execute(
@@ -767,16 +862,17 @@ fn apply_reminder(
                 )
                 .map_err(|e| e.to_string())?;
             }
-            Ok(0)
+            Ok(())
         }
-        "delete" => conn.execute(
-            "DELETE FROM reminders WHERE id = ?1",
-            params![operation.entity_id],
-        ),
-        _ => Ok(0),
+        "delete" => conn
+            .execute(
+                "DELETE FROM reminders WHERE id = ?1",
+                params![operation.entity_id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        _ => Ok(()),
     }
-    .map(|_| ())
-    .map_err(|e| e.to_string())
 }
 
 fn apply_remote_operation(
@@ -798,8 +894,8 @@ fn apply_remote_operation(
     match operation.entity_type.as_str() {
         "plan_item" => apply_plan_item(conn, operation, &patch)?,
         "note_group" => apply_note_group(conn, operation, &patch)?,
-        "note" => apply_note(conn, operation, &patch)?,
-        "reminder" => apply_reminder(conn, operation, &patch)?,
+        "note" => apply_note(conn, profile_id, operation, &patch)?,
+        "reminder" => apply_reminder(conn, profile_id, operation, &patch)?,
         _ => {}
     }
     insert_remote_operation(conn, profile_id, operation)
@@ -812,15 +908,21 @@ fn apply_exchange_response(
     credentials: &ServerSyncCredentials,
     sent_operation_ids: &[String],
     response: SyncExchangeResponse,
-) -> Result<(), String> {
+) -> Result<(Option<String>, Vec<String>), String> {
     let _accepted = response.accepted_count;
     let _duplicates = response.duplicate_count;
     mark_synced(conn, sent_operation_ids)?;
+    let mut missing_blobs = Vec::new();
     for operation in &response.operations {
         apply_remote_operation(conn, profile_id, &credentials.device_id, operation)?;
+        if operation.device_id != credentials.device_id {
+            if let Some(blob_id) = audio_blob_id_from_operation(operation) {
+                missing_blobs.push(blob_id);
+            }
+        }
         reconcile_remote_reminder_alarm(app, conn, &credentials.device_id, operation)?;
     }
-    store_last_pulled_hlc(conn, profile_id, response.next_pull_hlc.as_deref())
+    Ok((response.next_pull_hlc, missing_blobs))
 }
 
 fn reconcile_remote_reminder_alarm(
@@ -867,8 +969,11 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     let db = app.state::<crate::db::Db>();
     let config = app.state::<config::SyncProvidersConfig>();
     let profiles_state = app.state::<profiles::ProfilesState>();
+    let audio_key_state = app.state::<crate::AudioKeyState>();
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let configured = endpoint_from_config(&config).is_ok();
+    let audio_dir = profiles::data_dir(&profiles_state).join("audio");
+    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
 
     let credentials = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -877,6 +982,39 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     };
 
     for _ in 0..MAX_EXCHANGE_ROUNDS {
+        let prepared_uploads = {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            let pending = sync_blobs::pending_uploads(&conn, &profile_id)?;
+            if pending.is_empty() {
+                Vec::new()
+            } else {
+                let media_key = credentials.media_key.as_deref().ok_or_else(|| {
+                    "server sync media key is missing; sign in again to enable encrypted attachments"
+                        .to_string()
+                })?;
+                pending
+                    .iter()
+                    .map(|record| {
+                        sync_blobs::upload_request(
+                            &conn,
+                            &profile_id,
+                            &audio_dir,
+                            audio_key.as_deref(),
+                            media_key,
+                            record,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+        };
+        let uploaded = upload_prepared_blobs(&credentials, prepared_uploads).await?;
+        if !uploaded.is_empty() {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            for (blob_id, sha256, size_bytes) in uploaded {
+                sync_blobs::mark_uploaded(&conn, &profile_id, &blob_id, &sha256, size_bytes)?;
+            }
+        }
+
         let (last_pulled, operations) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
             let last_pulled = last_pulled_hlc(&conn, &profile_id)?;
@@ -892,15 +1030,44 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             exchange_with_server(&credentials, &profile_id, last_pulled, &operations).await?;
         let pulled_full_page = response.operations.len() == MAX_OPS_PER_EXCHANGE;
 
+        let (next_pull_hlc, mut missing_blobs) = {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            apply_exchange_response(
+                &app,
+                &conn,
+                &profile_id,
+                &credentials,
+                &sent_operation_ids,
+                response,
+            )?
+        };
+        missing_blobs.sort();
+        missing_blobs.dedup();
+        if !missing_blobs.is_empty() {
+            let media_key = credentials.media_key.as_deref().ok_or_else(|| {
+                "server sync media key is missing; sign in again to enable encrypted attachments"
+                    .to_string()
+            })?;
+            for blob_id in missing_blobs {
+                let Some(downloaded) = download_blob(&credentials, &profile_id, &blob_id).await?
+                else {
+                    continue;
+                };
+                let conn = db.0.lock().map_err(|e| e.to_string())?;
+                sync_blobs::materialize_download(
+                    &conn,
+                    &profile_id,
+                    &audio_dir,
+                    audio_key.as_deref(),
+                    media_key,
+                    &blob_id,
+                    &downloaded,
+                )?;
+            }
+        }
+
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        apply_exchange_response(
-            &app,
-            &conn,
-            &profile_id,
-            &credentials,
-            &sent_operation_ids,
-            response,
-        )?;
+        store_last_pulled_hlc(&conn, &profile_id, next_pull_hlc.as_deref())?;
 
         if !sent_full_page && !pulled_full_page {
             return status_for_profile(Some(&conn), &profile_id, configured, None);
@@ -966,6 +1133,7 @@ pub async fn connect_default_server_sync(
         &token,
         &device_id,
         None,
+        None,
     )?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
@@ -1005,6 +1173,7 @@ pub async fn register_server_account(
         &token,
         &device_id,
         Some(&account),
+        Some(blob_crypto::derive_media_key(&account.email, &password)),
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
@@ -1044,6 +1213,7 @@ pub async fn login_server_account(
         &token,
         &device_id,
         Some(&account),
+        Some(blob_crypto::derive_media_key(&account.email, &password)),
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
@@ -1149,6 +1319,7 @@ mod tests {
             "https://sync.example.com/",
             "secret-token",
             "device-a",
+            None,
             None,
         )?;
 

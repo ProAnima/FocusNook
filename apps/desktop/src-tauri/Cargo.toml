@@ -45,6 +45,7 @@ base64 = "0.22"
 # на другой платформе смысла нет.
 aes-gcm = "0.10"
 sha2 = "0.10"
+argon2 = "0.5"
 tauri-plugin-reminder-alarm = { path = "../../../plugins/tauri-plugin-reminder-alarm" }
 
 # Раздел 14 ТЗ, sync — OAuth-фундамент (только аутентификация, см. архитектурный
