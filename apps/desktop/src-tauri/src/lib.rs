@@ -1007,6 +1007,7 @@ pub fn run() {
             // или отдельного провайдера в нём — нормальное состояние, не
             // блокирует обычную работу приложения без sync.
             app.manage(config::load(&data_dir));
+            server_sync::spawn_best_effort(app.handle().clone());
 
             spawn_bounds_watcher(app.handle().clone(), last_moved.clone());
             spawn_window_state_watcher(
