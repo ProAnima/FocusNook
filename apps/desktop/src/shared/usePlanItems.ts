@@ -5,9 +5,9 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
   const [items, setItems] = useState<PlanItem[]>([]);
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = useCallback((withRollOver = autoRollOver) => {
     let cancelled = false;
-    const ready = autoRollOver
+    const ready = withRollOver
       ? commands.planItems.rollOverPending(planDate).catch(() => 0)
       : Promise.resolve(0);
     ready
@@ -25,6 +25,21 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
       cancelled = true;
     };
   }, [autoRollOver, planDate]);
+
+  useEffect(() => refresh(), [refresh]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    commands.serverSync
+      .onCompleted(() => {
+        refresh(false);
+      })
+      .then((cleanup) => {
+        unlisten = cleanup;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, [refresh]);
 
   const addItem = useCallback(async (title: string) => {
     const created = await commands.planItems.create(title, planDate).catch(() => null);

@@ -32,6 +32,17 @@ export function useReminders() {
     return () => unlisten?.();
   }, [refresh]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    commands.serverSync
+      .onCompleted(() => refresh())
+      .then((cleanup) => {
+        unlisten = cleanup;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, [refresh]);
+
   const addReminder = useCallback(async (title: string, triggerAtUtc: string) => {
     const created = await commands.reminders.create(title, triggerAtUtc).catch(() => null);
     if (created) setReminders((prev) => sortByTrigger([...prev, created]));

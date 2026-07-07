@@ -64,6 +64,16 @@ const MIGRATIONS: &[&str] = &[
     id INTEGER PRIMARY KEY CHECK (id = 0),
     device_id TEXT NOT NULL
 )",
+    "CREATE TABLE IF NOT EXISTS server_sync_credentials (
+    profile_id TEXT PRIMARY KEY,
+    raw_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)",
+    "CREATE TABLE IF NOT EXISTS sync_pull_state (
+    profile_id TEXT PRIMARY KEY,
+    last_pulled_hlc TEXT,
+    updated_at TEXT NOT NULL
+)",
 ];
 
 #[cfg(not(target_os = "android"))]
@@ -232,6 +242,7 @@ pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
     ensure_notes_audio_column(&conn)?;
     ensure_notes_group_column(&conn)?;
     ensure_reminders_audio_column(&conn)?;
+    ensure_sync_operations_synced_at_column(&conn)?;
     Ok(conn)
 }
 
@@ -314,6 +325,22 @@ fn ensure_reminders_audio_column(conn: &Connection) -> Result<(), String> {
         .any(|name| name == "audio_path");
     if !has_column {
         conn.execute("ALTER TABLE reminders ADD COLUMN audio_path TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_sync_operations_synced_at_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sync_operations)")
+        .map_err(|e| e.to_string())?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    if !columns.iter().any(|name| name == "synced_at") {
+        conn.execute("ALTER TABLE sync_operations ADD COLUMN synced_at TEXT", [])
             .map_err(|e| e.to_string())?;
     }
     Ok(())

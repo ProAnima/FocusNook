@@ -6,7 +6,7 @@ export function useNotes() {
   const [groups, setGroups] = useState<NoteGroup[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     Promise.all([commands.notes.list(), commands.notes.listGroups()])
       .then(([nextNotes, nextGroups]) => {
         setNotes(nextNotes);
@@ -18,6 +18,19 @@ export function useNotes() {
       })
       .finally(() => setLoaded(true));
   }, []);
+
+  useEffect(() => refresh(), [refresh]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    commands.serverSync
+      .onCompleted(() => refresh())
+      .then((cleanup) => {
+        unlisten = cleanup;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, [refresh]);
 
   const addGroup = useCallback(async (name: string) => {
     const created = await commands.notes.createGroup(name).catch(() => null);

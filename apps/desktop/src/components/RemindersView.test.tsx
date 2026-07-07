@@ -14,7 +14,10 @@ const { list, create, createAudio, deleteReminder, onChanged, startRecording, st
 }));
 
 vi.mock("../shared/commands", () => ({
-  commands: { reminders: { list, create, createAudio, delete: deleteReminder, onChanged } },
+  commands: {
+    reminders: { list, create, createAudio, delete: deleteReminder, onChanged },
+    serverSync: { onCompleted: vi.fn().mockResolvedValue(() => {}) },
+  },
 }));
 
 vi.mock("../shared/useMicrophoneSettings", () => ({

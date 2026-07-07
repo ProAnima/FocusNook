@@ -341,8 +341,17 @@ export const commands = {
     },
   },
   serverSync: {
+    onCompleted(handler: () => void) {
+      return listen("server-sync-completed", handler);
+    },
+    onFailed(handler: (message: string) => void) {
+      return listen<string>("server-sync-failed", (event) => handler(event.payload));
+    },
     async status(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("server_sync_status");
+    },
+    async syncNow(): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("sync_server_now");
     },
     async connectDefault(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_default_server_sync");

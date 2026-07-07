@@ -226,6 +226,7 @@ fn list_plan_items_range(
 
 #[tauri::command]
 fn create_plan_item(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -235,12 +236,17 @@ fn create_plan_item(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::create(&mut conn, &mut clock, &profile_id, &title, &plan_date)
-        .map_err(|e| e.to_string())
+    let item = plan_items::create(&mut conn, &mut clock, &profile_id, &title, &plan_date)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
 }
 
 #[tauri::command]
 fn toggle_plan_item_done(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -249,11 +255,17 @@ fn toggle_plan_item_done(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::toggle_done(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())
+    let item = plan_items::toggle_done(&mut conn, &mut clock, &profile_id, &id)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
 }
 
 #[tauri::command]
 fn cycle_plan_item_progress(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -262,11 +274,17 @@ fn cycle_plan_item_progress(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::cycle_progress(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())
+    let item = plan_items::cycle_progress(&mut conn, &mut clock, &profile_id, &id)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
 }
 
 #[tauri::command]
 fn toggle_plan_item_deferred(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -275,11 +293,17 @@ fn toggle_plan_item_deferred(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::toggle_deferred(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())
+    let item = plan_items::toggle_deferred(&mut conn, &mut clock, &profile_id, &id)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
 }
 
 #[tauri::command]
 fn move_plan_item_to_date(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -289,12 +313,17 @@ fn move_plan_item_to_date(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::move_to_date(&mut conn, &mut clock, &profile_id, &id, &plan_date)
-        .map_err(|e| e.to_string())
+    let item = plan_items::move_to_date(&mut conn, &mut clock, &profile_id, &id, &plan_date)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
 }
 
 #[tauri::command]
 fn roll_over_pending_plan_items(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -303,12 +332,19 @@ fn roll_over_pending_plan_items(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::roll_over_pending(&mut conn, &mut clock, &profile_id, &target_date)
-        .map_err(|e| e.to_string())
+    let moved = plan_items::roll_over_pending(&mut conn, &mut clock, &profile_id, &target_date)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    if moved > 0 {
+        trigger_server_sync(&app);
+    }
+    Ok(moved)
 }
 
 #[tauri::command]
 fn delete_plan_item(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -317,7 +353,11 @@ fn delete_plan_item(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    plan_items::delete(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())
+    plan_items::delete(&mut conn, &mut clock, &profile_id, &id).map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -334,6 +374,7 @@ fn list_note_groups(db: tauri::State<db::Db>) -> Result<Vec<notes::NoteGroupDto>
 
 #[tauri::command]
 fn create_note_group(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -342,11 +383,17 @@ fn create_note_group(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    notes::create_group(&mut conn, &mut clock, &profile_id, &name).map_err(|e| e.to_string())
+    let group = notes::create_group(&mut conn, &mut clock, &profile_id, &name)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(group)
 }
 
 #[tauri::command]
 fn create_note(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -356,18 +403,23 @@ fn create_note(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    notes::create(
+    let note = notes::create(
         &mut conn,
         &mut clock,
         &profile_id,
         &body,
         group_id.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(note)
 }
 
 #[tauri::command]
 fn move_note_to_group(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -377,12 +429,17 @@ fn move_note_to_group(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    notes::move_to_group(&mut conn, &mut clock, &profile_id, &id, group_id.as_deref())
-        .map_err(|e| e.to_string())
+    let note = notes::move_to_group(&mut conn, &mut clock, &profile_id, &id, group_id.as_deref())
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(note)
 }
 
 #[tauri::command]
 fn update_note(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -392,11 +449,17 @@ fn update_note(
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
-    notes::update_body(&mut conn, &mut clock, &profile_id, &id, &body).map_err(|e| e.to_string())
+    let note = notes::update_body(&mut conn, &mut clock, &profile_id, &id, &body)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(note)
 }
 
 #[tauri::command]
 fn delete_note(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     profiles_state: tauri::State<profiles::ProfilesState>,
@@ -406,7 +469,11 @@ fn delete_note(
     let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let dir = audio_dir(&profiles_state);
-    notes::delete(&mut conn, &mut clock, &profile_id, &dir, &id)
+    notes::delete(&mut conn, &mut clock, &profile_id, &dir, &id)?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(())
 }
 
 fn audio_dir(profiles_state: &tauri::State<profiles::ProfilesState>) -> std::path::PathBuf {
@@ -415,6 +482,7 @@ fn audio_dir(profiles_state: &tauri::State<profiles::ProfilesState>) -> std::pat
 
 #[tauri::command]
 fn create_audio_note(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     audio_key_state: tauri::State<AudioKeyState>,
@@ -427,7 +495,7 @@ fn create_audio_note(
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let dir = audio_dir(&profiles_state);
     let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?;
-    notes::create_audio(
+    let note = notes::create_audio(
         &mut conn,
         &mut clock,
         &profile_id,
@@ -435,7 +503,12 @@ fn create_audio_note(
         audio_key.as_deref(),
         &audio_base64,
         group_id.as_deref(),
-    )
+    )?;
+    drop(audio_key);
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(note)
 }
 
 #[tauri::command]
@@ -493,6 +566,10 @@ fn sync_readiness_status(
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     sync_status::build(&conn, &profile_id)
+}
+
+fn trigger_server_sync(app: &tauri::AppHandle) {
+    server_sync::spawn_best_effort(app.clone());
 }
 
 #[tauri::command]
@@ -553,6 +630,7 @@ fn create_reminder(
             .map_err(|e| e.to_string())?
     };
     schedule_android_alarm(&app, &reminder);
+    trigger_server_sync(&app);
     Ok(reminder)
 }
 
@@ -584,6 +662,7 @@ fn create_audio_reminder(
         )?
     };
     schedule_android_alarm(&app, &reminder);
+    trigger_server_sync(&app);
     Ok(reminder)
 }
 
@@ -627,6 +706,7 @@ fn acknowledge_reminder(
     cancel_android_alarm(&app, &id);
     let _ = app.emit("reminders-changed", ());
     alerts::resolve_current_alert(&app);
+    trigger_server_sync(&app);
     Ok(())
 }
 
@@ -649,6 +729,7 @@ fn snooze_reminder(
     schedule_android_alarm(&app, &reminder);
     let _ = app.emit("reminders-changed", ());
     alerts::resolve_current_alert(&app);
+    trigger_server_sync(&app);
     Ok(())
 }
 
@@ -669,6 +750,7 @@ fn delete_reminder(
     }
     cancel_android_alarm(&app, &id);
     let _ = app.emit("reminders-changed", ());
+    trigger_server_sync(&app);
     Ok(())
 }
 
@@ -991,7 +1073,8 @@ pub fn run() {
             server_sync::connect_default_server_sync,
             server_sync::register_server_account,
             server_sync::login_server_account,
-            server_sync::disconnect_server_sync
+            server_sync::disconnect_server_sync,
+            server_sync::sync_server_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

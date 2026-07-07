@@ -37,6 +37,7 @@ vi.mock("../shared/commands", () => ({
   commands: {
     notes: { list, listGroups, createGroup, create, createAudio, getAudio, moveToGroup, update: updateNote, delete: deleteNote },
     settings: { getMicrophoneDeviceId, setMicrophoneDeviceId, getNoteFolderSort, setNoteFolderSort },
+    serverSync: { onCompleted: vi.fn().mockResolvedValue(() => {}) },
   },
 }));
 

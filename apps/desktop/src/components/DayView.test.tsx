@@ -22,6 +22,7 @@ vi.mock("../shared/commands", () => ({
   commands: {
     planItems: { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, delete: deletePlanItem },
     reminders: { list: listReminders, onChanged: onRemindersChanged },
+    serverSync: { onCompleted: vi.fn().mockResolvedValue(() => {}) },
   },
 }));
 
