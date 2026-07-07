@@ -135,7 +135,8 @@ describe("SettingsPanel", () => {
   it("hides the autostart section on the mobile shell", async () => {
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop={false} />);
 
-    await screen.findByText("Настройки");
+    await screen.findByText("Тема");
+    expect(screen.queryByText("Настройки")).not.toBeInTheDocument();
     expect(screen.queryByText("Запускать вместе с Windows")).not.toBeInTheDocument();
   });
 

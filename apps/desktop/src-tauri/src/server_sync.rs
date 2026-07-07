@@ -12,6 +12,7 @@ const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
 const MAX_OPS_PER_EXCHANGE: usize = 100;
 const MAX_EXCHANGE_ROUNDS: usize = 20;
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -627,6 +628,43 @@ async fn download_blob(
         .map_err(|e| e.to_string())
 }
 
+async fn upload_pending_blobs(
+    db: &crate::db::Db,
+    credentials: &ServerSyncCredentials,
+    profile_id: &str,
+    audio_dir: &std::path::Path,
+    audio_key: Option<&str>,
+) -> Result<(), String> {
+    let prepared_uploads = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let pending = sync_blobs::pending_uploads(&conn, profile_id)?;
+        if pending.is_empty() {
+            Vec::new()
+        } else {
+            let media_key = credentials.media_key.as_deref().ok_or_else(|| {
+                "server sync media key is missing; sign in again to enable encrypted attachments"
+                    .to_string()
+            })?;
+            pending
+                .iter()
+                .map(|record| {
+                    sync_blobs::upload_request(
+                        &conn, profile_id, audio_dir, audio_key, media_key, record,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+    let uploaded = upload_prepared_blobs(credentials, prepared_uploads).await?;
+    if !uploaded.is_empty() {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        for (blob_id, sha256, size_bytes) in uploaded {
+            sync_blobs::mark_uploaded(&conn, profile_id, &blob_id, &sha256, size_bytes)?;
+        }
+    }
+    Ok(())
+}
+
 fn operation_exists(conn: &Connection, operation_id: &str) -> Result<bool, String> {
     let existing: Option<String> = conn
         .query_row(
@@ -982,38 +1020,14 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     };
 
     for _ in 0..MAX_EXCHANGE_ROUNDS {
-        let prepared_uploads = {
-            let conn = db.0.lock().map_err(|e| e.to_string())?;
-            let pending = sync_blobs::pending_uploads(&conn, &profile_id)?;
-            if pending.is_empty() {
-                Vec::new()
-            } else {
-                let media_key = credentials.media_key.as_deref().ok_or_else(|| {
-                    "server sync media key is missing; sign in again to enable encrypted attachments"
-                        .to_string()
-                })?;
-                pending
-                    .iter()
-                    .map(|record| {
-                        sync_blobs::upload_request(
-                            &conn,
-                            &profile_id,
-                            &audio_dir,
-                            audio_key.as_deref(),
-                            media_key,
-                            record,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-            }
-        };
-        let uploaded = upload_prepared_blobs(&credentials, prepared_uploads).await?;
-        if !uploaded.is_empty() {
-            let conn = db.0.lock().map_err(|e| e.to_string())?;
-            for (blob_id, sha256, size_bytes) in uploaded {
-                sync_blobs::mark_uploaded(&conn, &profile_id, &blob_id, &sha256, size_bytes)?;
-            }
-        }
+        upload_pending_blobs(
+            &db,
+            &credentials,
+            &profile_id,
+            &audio_dir,
+            audio_key.as_deref(),
+        )
+        .await?;
 
         let (last_pulled, operations) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -1021,6 +1035,14 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             let operations = unsynced_operations(&conn, &profile_id)?;
             (last_pulled, operations)
         };
+        upload_pending_blobs(
+            &db,
+            &credentials,
+            &profile_id,
+            &audio_dir,
+            audio_key.as_deref(),
+        )
+        .await?;
         let sent_full_page = operations.len() == MAX_OPS_PER_EXCHANGE;
         let sent_operation_ids = operations
             .iter()
@@ -1082,11 +1104,23 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
+        SYNC_RERUN_REQUESTED.store(true, Ordering::SeqCst);
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let result = perform_sync(app.clone()).await;
+        let mut result;
+        loop {
+            SYNC_RERUN_REQUESTED.store(false, Ordering::SeqCst);
+            result = perform_sync(app.clone()).await;
+            if !SYNC_RERUN_REQUESTED.swap(false, Ordering::SeqCst) {
+                break;
+            }
+        }
         SYNC_IN_FLIGHT.store(false, Ordering::SeqCst);
+        if SYNC_RERUN_REQUESTED.swap(false, Ordering::SeqCst) {
+            spawn_best_effort(app);
+            return;
+        }
         match result {
             Ok(_) => {
                 let _ = app.emit("server-sync-completed", ());

@@ -3,17 +3,17 @@ import { commands, type ShortcutInfo } from "./commands";
 
 export type { ShortcutInfo };
 
+function fallbackIsDesktop() {
+  return window.innerWidth >= 720;
+}
+
 export function useLayerToggle() {
   const [front, setFront] = useState(true);
   const [shortcutInfo, setShortcutInfo] = useState<ShortcutInfo | null>(null);
-  // По умолчанию true: на десктопе (основная платформа сегодня) кнопка не
-  // мигает, пока не придёт ответ. На Android/iOS почти сразу скрывается —
-  // там нет оконного always-on-top, которым эта кнопка управляет.
-  const [isDesktop, setIsDesktop] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(fallbackIsDesktop);
 
   const toggleLayer = useCallback(() => {
     commands.overlay.toggle().catch(() => {
-      // Вне Tauri (например, в browser-preview) команда недоступна — переключаем UI сами.
       setFront((prev) => !prev);
     });
   }, []);
@@ -23,14 +23,14 @@ export function useLayerToggle() {
       .getShortcutStatus()
       .then(setShortcutInfo)
       .catch(() => {
-        // Вне Tauri статус хоткея недоступен — просто не показываем секцию.
+        // Browser preview has no global shortcut state.
       });
 
     commands.overlay
       .isDesktop()
       .then(setIsDesktop)
       .catch(() => {
-        // Вне Tauri считаем десктопом, чтобы поведение в browser-preview не менялось.
+        setIsDesktop(fallbackIsDesktop());
       });
 
     const unlistenChanged = commands.overlay.onLayerChanged(setFront);

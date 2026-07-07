@@ -607,12 +607,14 @@ export function SettingsPanel({
 
   return (
     <div className="settings-panel">
-      <div className="settings-header">
-        <span>{t("settings.title")}</span>
-        <button className="icon-button" onClick={onClose} title={t("header.close")} aria-label={t("header.close")}>
-          <X size={14} />
-        </button>
-      </div>
+      {isDesktop && (
+        <div className="settings-header">
+          <span>{t("settings.title")}</span>
+          <button className="icon-button" onClick={onClose} title={t("header.close")} aria-label={t("header.close")}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <AppearanceSection mode={mode} setMode={setMode} />
       <LanguageSection />

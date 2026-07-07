@@ -4,6 +4,14 @@ import { currentMonitor, cursorPosition, getCurrentWindow } from "@tauri-apps/ap
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 
+async function safeListen<T>(eventName: string, handler: (event: { payload: T }) => void): Promise<() => void> {
+  try {
+    return await listen<T>(eventName, handler);
+  } catch {
+    return () => {};
+  }
+}
+
 // aurora/sunset/ocean/forest — "живые" темы с анимированным фоном (см.
 // theme.css и useLiveBackgroundPointer), а не просто другая палитра.
 export type ThemeMode =
@@ -138,7 +146,7 @@ export const commands = {
       return invoke<boolean>("toggle_overlay_layer");
     },
     onLayerChanged(handler: (front: boolean) => void) {
-      return listen<boolean>("layer-changed", (event) => handler(event.payload));
+      return safeListen<boolean>("layer-changed", (event) => handler(event.payload));
     },
     async getShortcutStatus(): Promise<ShortcutInfo | null> {
       return invoke<ShortcutInfo | null>("get_shortcut_status");
@@ -246,7 +254,7 @@ export const commands = {
   },
   reminders: {
     onChanged(handler: () => void) {
-      return listen("reminders-changed", handler);
+      return safeListen("reminders-changed", handler);
     },
     async list(): Promise<Reminder[]> {
       return invoke<Reminder[]>("list_reminders");
@@ -342,10 +350,10 @@ export const commands = {
   },
   serverSync: {
     onCompleted(handler: () => void) {
-      return listen("server-sync-completed", handler);
+      return safeListen("server-sync-completed", handler);
     },
     onFailed(handler: (message: string) => void) {
-      return listen<string>("server-sync-failed", (event) => handler(event.payload));
+      return safeListen<string>("server-sync-failed", (event) => handler(event.payload));
     },
     async status(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("server_sync_status");
