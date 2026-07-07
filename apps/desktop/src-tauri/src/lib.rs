@@ -514,20 +514,29 @@ fn create_audio_note(
 }
 
 #[tauri::command]
-fn get_note_audio(
-    db: tauri::State<db::Db>,
-    audio_key_state: tauri::State<AudioKeyState>,
-    profiles_state: tauri::State<profiles::ProfilesState>,
+async fn get_note_audio(
+    db: tauri::State<'_, db::Db>,
+    audio_key_state: tauri::State<'_, AudioKeyState>,
+    profiles_state: tauri::State<'_, profiles::ProfilesState>,
     id: String,
 ) -> Result<String, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?;
-    notes::read_audio(
-        &conn,
-        &audio_dir(&profiles_state),
+    let dir = audio_dir(&profiles_state);
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
+    let filename = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        notes::audio_filename(&conn, &id)?
+    };
+    server_sync::ensure_audio_blob_downloaded(
+        &db,
+        &profile_id,
+        &dir,
         audio_key.as_deref(),
-        &id,
+        &filename,
     )
+    .await?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    notes::read_audio(&conn, &dir, audio_key.as_deref(), &id)
 }
 
 // Раздел 19 ТЗ: "user export diagnostics bundle без пользовательского
@@ -674,20 +683,29 @@ fn get_current_alert(state: tauri::State<alerts::AlertState>) -> Option<reminder
 }
 
 #[tauri::command]
-fn get_reminder_audio(
-    db: tauri::State<db::Db>,
-    audio_key_state: tauri::State<AudioKeyState>,
-    profiles_state: tauri::State<profiles::ProfilesState>,
+async fn get_reminder_audio(
+    db: tauri::State<'_, db::Db>,
+    audio_key_state: tauri::State<'_, AudioKeyState>,
+    profiles_state: tauri::State<'_, profiles::ProfilesState>,
     id: String,
 ) -> Result<String, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?;
-    reminders::read_audio(
-        &conn,
-        &audio_dir(&profiles_state),
+    let dir = audio_dir(&profiles_state);
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
+    let filename = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        reminders::audio_filename(&conn, &id)?
+    };
+    server_sync::ensure_audio_blob_downloaded(
+        &db,
+        &profile_id,
+        &dir,
         audio_key.as_deref(),
-        &id,
+        &filename,
     )
+    .await?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    reminders::read_audio(&conn, &dir, audio_key.as_deref(), &id)
 }
 
 #[tauri::command]
@@ -1008,6 +1026,7 @@ pub fn run() {
             // блокирует обычную работу приложения без sync.
             app.manage(config::load(&data_dir));
             server_sync::spawn_best_effort(app.handle().clone());
+            server_sync::spawn_periodic_best_effort(app.handle().clone());
 
             spawn_bounds_watcher(app.handle().clone(), last_moved.clone());
             spawn_window_state_watcher(

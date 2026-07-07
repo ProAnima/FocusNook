@@ -297,6 +297,15 @@ pub fn read_audio(
     Ok(STANDARD.encode(bytes))
 }
 
+pub fn audio_filename(conn: &Connection, note_id: &str) -> Result<String, String> {
+    conn.query_row(
+        "SELECT audio_path FROM notes WHERE id = ?1 AND audio_path IS NOT NULL",
+        params![note_id],
+        |row| row.get(0),
+    )
+    .map_err(|_| "audio for this note was not found".to_string())
+}
+
 // audio_dir нужен, чтобы удалить файл с диска, а не только строку из БД
 // (раздел P1 ревью — раньше удаление заметки оставляло .webm висеть на
 // диске вечно). Файл убирается ПОСЛЕ commit и best-effort (ошибка не

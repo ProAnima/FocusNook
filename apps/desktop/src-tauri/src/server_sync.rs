@@ -665,6 +665,43 @@ async fn download_blob(
         .map_err(|e| e.to_string())
 }
 
+pub async fn ensure_audio_blob_downloaded(
+    db: &crate::db::Db,
+    profile_id: &str,
+    audio_dir: &std::path::Path,
+    audio_key: Option<&str>,
+    blob_id: &str,
+) -> Result<(), String> {
+    if audio_dir.join(blob_id).exists() {
+        return Ok(());
+    }
+    let credentials = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        load_credentials(Some(&conn), profile_id)?
+    };
+    let Some(credentials) = credentials else {
+        return Ok(());
+    };
+    let remote_profile_id = server_profile_id(&credentials, profile_id);
+    let media_key = credentials.media_key.as_deref().ok_or_else(|| {
+        "server sync media key is missing; sign in again to enable encrypted attachments"
+            .to_string()
+    })?;
+    let Some(downloaded) = download_blob(&credentials, &remote_profile_id, blob_id).await? else {
+        return Ok(());
+    };
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    sync_blobs::materialize_download(
+        &conn,
+        profile_id,
+        audio_dir,
+        audio_key,
+        media_key,
+        blob_id,
+        &downloaded,
+    )
+}
+
 async fn upload_pending_blobs(
     db: &crate::db::Db,
     credentials: &ServerSyncCredentials,
@@ -1188,6 +1225,15 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
                 eprintln!("server-sync: best-effort sync failed: {err}");
                 let _ = app.emit("server-sync-failed", err);
             }
+        }
+    });
+}
+
+pub fn spawn_periodic_best_effort(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            spawn_best_effort(app.clone());
         }
     });
 }

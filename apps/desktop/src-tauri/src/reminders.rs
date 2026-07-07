@@ -288,6 +288,15 @@ pub fn read_audio(
     Ok(STANDARD.encode(bytes))
 }
 
+pub fn audio_filename(conn: &Connection, reminder_id: &str) -> Result<String, String> {
+    conn.query_row(
+        "SELECT audio_path FROM reminders WHERE id = ?1 AND audio_path IS NOT NULL",
+        params![reminder_id],
+        |row| row.get(0),
+    )
+    .map_err(|_| "audio for this reminder was not found".to_string())
+}
+
 // Раздел 11 ТЗ: Android-alarm нужен epoch-millis, а не строка. trigger_at_utc
 // всегда приходит из JS Date.prototype.toISOString() — фиксированный формат
 // "YYYY-MM-DDTHH:mm:ss.sssZ", поэтому раскладываем по позициям вручную и
