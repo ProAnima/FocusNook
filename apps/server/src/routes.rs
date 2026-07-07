@@ -371,9 +371,12 @@ async fn exchange(
         return Err(AppError::BadRequest("too many operations".to_string()));
     }
 
+    let canonical_profile_id = canonical_profile_id(auth.user_id);
     let mut accepted_count = 0_i64;
     let mut duplicate_count = 0_i64;
     let mut tx = state.pool.begin().await?;
+    let migrated_legacy_scope =
+        normalize_legacy_profile_scopes(&mut tx, auth.user_id, &canonical_profile_id).await?;
     for operation in &request.operations {
         validate_operation(operation, &request.device_id, &state)?;
         let digest = operation_digest(operation);
@@ -389,7 +392,7 @@ async fn exchange(
              ON CONFLICT (user_id, profile_id, operation_id) DO NOTHING",
         )
         .bind(auth.user_id)
-        .bind(&request.profile_id)
+        .bind(&canonical_profile_id)
         .bind(&operation.operation_id)
         .bind(&operation.device_id)
         .bind(&operation.entity_type)
@@ -410,7 +413,7 @@ async fn exchange(
             ensure_existing_operation_matches(
                 &mut tx,
                 auth.user_id,
-                &request.profile_id,
+                &canonical_profile_id,
                 &operation.operation_id,
                 &digest,
             )
@@ -419,7 +422,12 @@ async fn exchange(
         }
     }
 
-    let rows = pull_operations(&mut tx, &state, &auth, &request).await?;
+    let last_pulled_hlc = if migrated_legacy_scope {
+        None
+    } else {
+        request.last_pulled_hlc.as_deref()
+    };
+    let rows = pull_operations(&mut tx, &state, &auth, last_pulled_hlc).await?;
     tx.commit().await?;
     let operations = decrypt_operations(&state, rows)?;
     let outbound_bytes = operations
@@ -464,6 +472,7 @@ async fn upload_blob(
         return Err(AppError::BadRequest("blob is too large".to_string()));
     }
     let encrypted = state.crypto.encrypt(&bytes)?;
+    let canonical_profile_id = canonical_profile_id(auth.user_id);
 
     let result = sqlx::query(
         "INSERT INTO sync_blobs
@@ -472,7 +481,7 @@ async fn upload_blob(
          ON CONFLICT (user_id, profile_id, blob_id) DO NOTHING",
     )
     .bind(auth.user_id)
-    .bind(&request.profile_id)
+    .bind(&canonical_profile_id)
     .bind(&request.blob_id)
     .bind(content_type)
     .bind(sha256)
@@ -485,7 +494,7 @@ async fn upload_blob(
         ensure_existing_blob_matches(
             &state,
             auth.user_id,
-            &request.profile_id,
+            &canonical_profile_id,
             &request.blob_id,
             content_type,
             sha256,
@@ -512,11 +521,13 @@ async fn download_blob(
     let row = sqlx::query_as::<_, DbBlob>(
         "SELECT blob_id, content_type, sha256, size_bytes, bytes_enc, server_nonce
          FROM sync_blobs
-         WHERE user_id = $1 AND profile_id = $2 AND blob_id = $3",
+         WHERE user_id = $1 AND blob_id = $2
+         ORDER BY CASE WHEN profile_id = $3 THEN 0 ELSE 1 END, created_at DESC
+         LIMIT 1",
     )
     .bind(auth.user_id)
-    .bind(&profile_id)
     .bind(&blob_id)
+    .bind(canonical_profile_id(auth.user_id))
     .fetch_optional(&state.pool)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -562,25 +573,87 @@ async fn pull_operations(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     state: &AppState,
     auth: &crate::auth::DeviceAuth,
-    request: &SyncExchangeRequest,
+    last_pulled_hlc: Option<&str>,
 ) -> AppResult<Vec<DbOperation>> {
     sqlx::query_as::<_, DbOperation>(
         "SELECT operation_id, device_id, entity_type, entity_id, op, hlc, schema_version,
                 payload_ciphertext_enc, payload_nonce, payload_key_id, server_nonce, created_at
          FROM sync_operations
          WHERE user_id = $1
-           AND profile_id = $2
-           AND ($3::TEXT IS NULL OR hlc > $3)
+           AND ($2::TEXT IS NULL OR hlc > $2)
          ORDER BY hlc ASC, operation_id ASC
-         LIMIT $4",
+         LIMIT $3",
     )
     .bind(auth.user_id)
-    .bind(&request.profile_id)
-    .bind(&request.last_pulled_hlc)
+    .bind(last_pulled_hlc)
     .bind(state.config.max_ops_per_exchange)
     .fetch_all(&mut **tx)
     .await
     .map_err(AppError::from)
+}
+
+fn canonical_profile_id(user_id: Uuid) -> String {
+    user_id.to_string()
+}
+
+async fn normalize_legacy_profile_scopes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    canonical_profile_id: &str,
+) -> AppResult<bool> {
+    let deleted_ops = sqlx::query(
+        "DELETE FROM sync_operations AS legacy
+         USING sync_operations AS canonical
+         WHERE legacy.user_id = $1
+           AND legacy.profile_id <> $2
+           AND canonical.user_id = legacy.user_id
+           AND canonical.profile_id = $2
+           AND canonical.operation_id = legacy.operation_id",
+    )
+    .bind(user_id)
+    .bind(canonical_profile_id)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+
+    let moved_ops = sqlx::query(
+        "UPDATE sync_operations
+         SET profile_id = $2
+         WHERE user_id = $1 AND profile_id <> $2",
+    )
+    .bind(user_id)
+    .bind(canonical_profile_id)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+
+    let deleted_blobs = sqlx::query(
+        "DELETE FROM sync_blobs AS legacy
+         USING sync_blobs AS canonical
+         WHERE legacy.user_id = $1
+           AND legacy.profile_id <> $2
+           AND canonical.user_id = legacy.user_id
+           AND canonical.profile_id = $2
+           AND canonical.blob_id = legacy.blob_id",
+    )
+    .bind(user_id)
+    .bind(canonical_profile_id)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+
+    let moved_blobs = sqlx::query(
+        "UPDATE sync_blobs
+         SET profile_id = $2
+         WHERE user_id = $1 AND profile_id <> $2",
+    )
+    .bind(user_id)
+    .bind(canonical_profile_id)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+
+    Ok(deleted_ops + moved_ops + deleted_blobs + moved_blobs > 0)
 }
 
 async fn ensure_existing_operation_matches(
