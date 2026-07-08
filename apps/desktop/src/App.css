@@ -2931,3 +2931,508 @@ textarea {
 .mobile-shell .empty-state {
   font-size: 14px;
 }
+
+/* Mobile polish pass: tighter native layout for real phone screens. */
+.mobile-shell {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
+  background: var(--surface-gradient);
+  --mobile-side-padding: clamp(14px, 4.2vw, 20px);
+}
+
+.mobile-shell .live-background {
+  opacity: 0.18;
+}
+
+.mobile-topbar {
+  align-items: flex-end;
+  height: calc(56px + env(safe-area-inset-top, 0px));
+  min-height: calc(56px + env(safe-area-inset-top, 0px));
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 6px)
+    var(--mobile-side-padding)
+    12px;
+  background: color-mix(in srgb, var(--surface-gradient) 92%, transparent);
+}
+
+.mobile-topbar-title {
+  font-size: clamp(22px, 6.2vw, 28px);
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.mobile-shell .body {
+  overflow: hidden;
+  padding: 18px var(--mobile-side-padding) 14px;
+}
+
+.mobile-shell .tab-view {
+  min-height: 0;
+  gap: 14px;
+}
+
+.bottom-nav {
+  min-height: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface-gradient) 94%, transparent);
+  box-shadow: 0 -10px 28px rgba(16, 18, 32, 0.05);
+}
+
+.bottom-nav .tab {
+  min-width: 0;
+  min-height: 58px;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 3px;
+  border-radius: 16px;
+  color: var(--text-secondary);
+  font-size: clamp(11px, 3.2vw, 13px);
+  line-height: 1.08;
+}
+
+.bottom-nav .tab svg {
+  width: 24px;
+  height: 24px;
+}
+
+.bottom-nav .tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bottom-nav .tab.tab-active {
+  background: color-mix(in srgb, var(--accent-soft-bg) 78%, transparent);
+  box-shadow: none;
+}
+
+.mobile-shell .day-header {
+  min-height: 58px;
+  padding: 0 0 14px;
+}
+
+.mobile-shell .day-date {
+  font-size: clamp(21px, 5.6vw, 26px);
+  font-weight: 760;
+  line-height: 1.08;
+}
+
+.mobile-shell .day-count {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.mobile-shell .day-nav .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-shell .plan-list,
+.mobile-shell .note-list,
+.mobile-shell .reminder-list {
+  gap: 10px;
+  min-height: 0;
+  padding: 0 0 2px;
+  scrollbar-width: none;
+}
+
+.mobile-shell .plan-list::-webkit-scrollbar,
+.mobile-shell .note-list::-webkit-scrollbar,
+.mobile-shell .reminder-list::-webkit-scrollbar,
+.mobile-shell .settings-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-shell .plan-item,
+.mobile-shell .note-item,
+.mobile-shell .reminder-item {
+  border: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--control-bg) 78%, transparent);
+  box-shadow: none;
+}
+
+.mobile-shell .plan-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  min-height: 58px;
+  padding: 10px 10px;
+  gap: 10px;
+}
+
+.mobile-shell .plan-checkbox {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.mobile-shell .plan-title {
+  min-width: 0;
+  font-size: clamp(16px, 4.4vw, 18px);
+  line-height: 1.18;
+}
+
+.mobile-shell .plan-item-actions {
+  gap: 4px;
+}
+
+.mobile-shell .plan-item-actions .icon-button {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 11px;
+}
+
+.mobile-shell .plan-progress {
+  min-width: 40px;
+  min-height: 34px;
+  padding: 0 8px;
+}
+
+.mobile-shell .quick-add {
+  flex: none;
+  min-height: 58px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--control-bg) 82%, transparent);
+}
+
+.mobile-shell .quick-add input,
+.mobile-shell .quick-add textarea {
+  font-size: clamp(16px, 4.4vw, 18px);
+}
+
+.mobile-shell .notes-shell {
+  gap: 12px;
+}
+
+.mobile-shell .note-folder-mobile-toggle {
+  min-height: 56px;
+  border-radius: 16px;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--control-bg) 82%, transparent);
+}
+
+.mobile-shell .note-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 64px;
+  padding: 12px 12px;
+  gap: 10px;
+}
+
+.mobile-shell .note-item.is-audio {
+  align-items: center;
+  min-height: 78px;
+}
+
+.mobile-shell .note-drag-handle {
+  width: 28px;
+  min-height: 40px;
+}
+
+.mobile-shell .note-content {
+  align-self: center;
+}
+
+.mobile-shell .note-body {
+  display: block;
+  font-size: clamp(17px, 4.8vw, 20px);
+  line-height: 1.15;
+  -webkit-line-clamp: unset;
+}
+
+.mobile-shell .note-item-actions {
+  gap: 6px;
+}
+
+.mobile-shell .note-item-actions .icon-button {
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.mobile-shell .note-audio-card {
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-height: 54px;
+  gap: 10px;
+}
+
+.mobile-shell .note-audio-play {
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  min-height: 54px;
+}
+
+.mobile-shell .note-audio-main {
+  gap: 7px;
+}
+
+.mobile-shell .note-audio-meta {
+  align-items: center;
+}
+
+.mobile-shell .note-audio-meta span {
+  font-size: 15px;
+}
+
+.mobile-shell .note-audio-meta small {
+  max-width: 94px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.mobile-shell .note-audio-progress {
+  height: 20px;
+}
+
+.mobile-shell .note-composer {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-shell .note-composer textarea {
+  min-height: 32px;
+  max-height: 112px;
+  line-height: 1.25;
+}
+
+.mobile-shell .record-button,
+.mobile-shell .note-submit-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-shell .reminder-list {
+  gap: 12px;
+}
+
+.mobile-shell .reminder-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 42px;
+  min-height: 72px;
+  padding: 12px 14px;
+  gap: 10px;
+}
+
+.mobile-shell .reminder-kind {
+  width: 36px;
+  height: 36px;
+}
+
+.mobile-shell .reminder-title {
+  min-width: 0;
+  font-size: clamp(17px, 4.8vw, 20px);
+  line-height: 1.15;
+}
+
+.mobile-shell .reminder-time-block {
+  min-width: 96px;
+}
+
+.mobile-shell .reminder-time,
+.mobile-shell .reminder-countdown {
+  max-width: 118px;
+}
+
+.mobile-shell .reminder-time {
+  font-size: 14px;
+}
+
+.mobile-shell .reminder-countdown {
+  font-size: 13px;
+}
+
+.mobile-shell .reminder-composer {
+  flex: none;
+  gap: 10px;
+}
+
+.mobile-shell .reminder-input-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+}
+
+.mobile-shell .reminder-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-shell .reminder-presets .preset-button {
+  min-width: 0;
+  min-height: 54px;
+  padding: 8px 6px;
+  border-radius: 12px;
+  font-size: clamp(12px, 3.5vw, 14px);
+  line-height: 1.12;
+  white-space: normal;
+}
+
+.mobile-shell .reminder-custom-time {
+  grid-template-columns: minmax(0, 1fr) 72px 92px 44px;
+  gap: 8px;
+}
+
+.mobile-shell .settings-panel {
+  gap: 18px;
+  padding: 0 0 8px;
+  scrollbar-width: none;
+}
+
+.mobile-shell .settings-group {
+  gap: 10px;
+}
+
+.mobile-shell .settings-group-label {
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+}
+
+.mobile-shell .theme-list {
+  max-height: min(46vh, 360px);
+  gap: 8px;
+}
+
+.mobile-shell .theme-summary,
+.mobile-shell .theme-row,
+.mobile-shell .settings-select-trigger,
+.mobile-shell .toggle-row,
+.mobile-shell .account-sync-summary,
+.mobile-shell .sync-readiness-card,
+.mobile-shell .sync-provider-row,
+.mobile-shell .server-account-card {
+  border-radius: 16px;
+}
+
+.mobile-shell .settings-select-menu {
+  position: fixed;
+  left: var(--mobile-side-padding);
+  right: var(--mobile-side-padding);
+  top: auto;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  z-index: 90;
+  max-height: min(52vh, 430px);
+  border-radius: 18px;
+  background: var(--surface-gradient);
+}
+
+.mobile-shell .settings-select-option {
+  min-height: 48px;
+}
+
+.mobile-shell .settings-inline-row {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.mobile-shell .microphone-test {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.mobile-shell .microphone-test .preset-button,
+.mobile-shell .settings-choice-grid .preset-button {
+  min-height: 46px;
+}
+
+.mobile-shell .sync-readiness-card {
+  padding: 14px;
+}
+
+.mobile-shell .sync-readiness-grid {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+  gap: 7px 12px;
+  font-size: 13px;
+}
+
+.mobile-shell .sync-readiness-grid strong {
+  max-width: none;
+  font-size: 13px;
+}
+
+.mobile-shell .sync-provider-row {
+  grid-template-columns: 44px minmax(0, 1fr);
+  min-height: 76px;
+  padding: 14px;
+  gap: 12px;
+}
+
+.mobile-shell .sync-provider-row .preset-button {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 42px;
+  margin-top: 4px;
+}
+
+.mobile-shell .sync-provider-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+}
+
+.mobile-shell .sync-provider-info {
+  font-size: 15px;
+  gap: 4px;
+}
+
+.mobile-shell .sync-provider-description {
+  font-size: 13px;
+}
+
+.mobile-shell .server-account-head {
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+
+.mobile-shell .server-account-head .preset-button {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 42px;
+  margin-top: 4px;
+}
+
+.mobile-shell .settings-secure-note {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 6px;
+  line-height: 1.35;
+}
+
+@media (max-width: 380px) {
+  .mobile-shell {
+    --mobile-side-padding: 12px;
+  }
+
+  .mobile-shell .plan-item {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .mobile-shell .plan-item-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    margin-top: -4px;
+  }
+
+  .mobile-shell .reminder-item {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+  }
+
+  .mobile-shell .reminder-time-block {
+    grid-column: 2;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .mobile-shell .reminder-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
