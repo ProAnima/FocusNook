@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 set -eu
+umask 077
 
 if [ "${1:-}" != "--apply" ]; then
   echo "Dry stop: run $0 --apply only after reviewing access, backup target, and legal variables" >&2
