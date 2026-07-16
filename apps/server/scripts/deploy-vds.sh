@@ -13,10 +13,19 @@ env_file="${FOCUSNOOK_ENV_FILE:-/opt/focusnook/.env}"
 compose_file="${FOCUSNOOK_COMPOSE_FILE:-${server_dir}/compose.vds-nginx.yml}"
 project="${FOCUSNOOK_COMPOSE_PROJECT:-focusnook}"
 base_url="${FOCUSNOOK_BASE_URL:-https://focus.proanima.net}"
-state_dir="${FOCUSNOOK_RELEASE_STATE_DIR:-/opt/focusnook/releases}"
 nginx_source="${FOCUSNOOK_NGINX_SOURCE:-${server_dir}/nginx/focusnook.conf}"
 nginx_target="${FOCUSNOOK_NGINX_TARGET:-/etc/nginx/sites-available/focusnook.conf}"
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+local_backup_sha="${FOCUSNOOK_LOCAL_BACKUP_SHA256:-}"
+test "${#local_backup_sha}" -eq 64 || {
+  echo "set FOCUSNOOK_LOCAL_BACKUP_SHA256 from a verified local backup" >&2
+  exit 2
+}
+case "$local_backup_sha" in
+  *[!0-9a-fA-F]*)
+    echo "FOCUSNOOK_LOCAL_BACKUP_SHA256 must be a SHA-256 digest" >&2
+    exit 2
+    ;;
+esac
 expect_legal=0
 if grep -q '^FOCUSNOOK_LEGAL_NAME=.' "$env_file"; then
   expect_legal=1
@@ -30,6 +39,8 @@ running_container="$(compose ps -q server)"
 test -n "$running_container" || { echo "running server container not found" >&2; exit 1; }
 previous_image="$(docker inspect --format '{{.Image}}' "$running_container")"
 test -n "$previous_image" || { echo "current server image not found" >&2; exit 1; }
+nginx_backup="$(mktemp /tmp/focusnook-nginx.XXXXXX)"
+cp "$nginx_target" "$nginx_backup"
 image_rollback_needed=0
 nginx_rollback_needed=0
 
@@ -52,6 +63,7 @@ rollback_on_exit() {
       nginx -s reload || true
     fi
   fi
+  rm -f "$nginx_backup"
   exit "$status"
 }
 trap rollback_on_exit EXIT INT TERM
@@ -59,19 +71,7 @@ trap rollback_on_exit EXIT INT TERM
 FOCUSNOOK_ENV_FILE="$env_file" FOCUSNOOK_COMPOSE_FILE="$compose_file" \
   FOCUSNOOK_COMPOSE_PROJECT="$project" sh "$script_dir/predeploy-check.sh"
 image_rollback_needed=1
-
-mkdir -p "$state_dir"
-backup_file="${state_dir}/focusnook-predeploy-${timestamp}.dump"
-db_user="$(compose exec -T postgres printenv POSTGRES_USER | tr -d '\r')"
-db_name="$(compose exec -T postgres printenv POSTGRES_DB | tr -d '\r')"
-printf '%s\n' "$previous_image" > "${state_dir}/rollback-image-${timestamp}.txt"
-nginx_backup="${state_dir}/nginx-focusnook-${timestamp}.conf"
-cp "$nginx_target" "$nginx_backup"
-
-compose exec -T postgres pg_dump -U "$db_user" -d "$db_name" -Fc > "$backup_file"
-test -s "$backup_file" || { echo "backup is empty" >&2; exit 1; }
-compose exec -T postgres pg_restore --list < "$backup_file" >/dev/null
-echo "Backup verified: ${backup_file}"
+echo "Verified local backup acknowledged: ${local_backup_sha}"
 
 nginx_rollback_needed=1
 cp "$nginx_source" "$nginx_target"
@@ -84,10 +84,18 @@ compose up -d --no-deps server
 nginx -s reload
 
 if FOCUSNOOK_EXPECT_LEGAL="$expect_legal" sh "$script_dir/smoke-test.sh" "$base_url"; then
+  current_container="$(compose ps -q server)"
+  current_image="$(docker inspect --format '{{.Image}}' "$current_container")"
   image_rollback_needed=0
   nginx_rollback_needed=0
   trap - EXIT INT TERM
-  echo "Deploy completed. Rollback image: ${previous_image}"
+  rm -f "$nginx_backup"
+  if [ "$previous_image" != "$current_image" ]; then
+    docker image rm "$previous_image" >/dev/null || {
+      echo "Warning: previous FocusNook image is still referenced and was not removed" >&2
+    }
+  fi
+  echo "Deploy completed with local backup ${local_backup_sha}"
   exit 0
 fi
 

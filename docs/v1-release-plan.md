@@ -19,10 +19,11 @@ letting it drift the way the old Iteration 0-3 roadmap did.
      its certificate SHA-256. No release key is stored in this repository.
 2. **VDS server production rollout**, prepared but not applied without access:
    - rotate `FOCUSNOOK_ADMIN_TOKEN` after bootstrap;
-   - confirm `.env`, DB dumps, and VDS snapshots live outside the repo and
-     off-box;
+   - confirm `.env` lives outside the repo and DB dumps are downloaded to the
+     operator's local backup storage instead of being retained on the VDS;
    - add an external uptime monitor for `/healthz` and `/readyz`;
-   - run `scripts/deploy-vds.sh --apply`, a real `restore-drill.sh`, and record
+   - run `scripts/backup-vds-local.py`, `scripts/deploy-vds.sh --apply`, a real
+     restore drill, and record
      public `/privacy` and `/terms` smoke evidence. The routes currently remain
      absent from the live nginx until this rollout.
 3. **One recorded end-to-end desktop + Android sync pass** against the same

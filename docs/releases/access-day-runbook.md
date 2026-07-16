@@ -33,25 +33,22 @@ Do not rebuild after recording the hash; any rebuild creates a new candidate.
 
 ## 3. Prepare and update the VDS
 
-1. Make an off-box snapshot/backup and confirm the current service is healthy.
+1. From the operator computer, run `apps/server/scripts/backup-vds-local.py`,
+   verify its local manifest, and record the printed SHA-256. Confirm the current
+   service is healthy. Do not retain the dump on the VDS.
 2. Add the approved `FOCUSNOOK_LEGAL_*` and `FOCUSNOOK_SUPPORT_EMAIL` values to
    `/opt/focusnook/.env`; confirm no `change-me`/`replace-with` values remain.
 3. In the checked-out `apps/server` directory run:
 
    ```sh
    sh scripts/predeploy-check.sh
-   sh scripts/restore-drill.sh /path/to/latest-off-box-copy.dump --apply
-   sh scripts/deploy-vds.sh --apply
+   FOCUSNOOK_LOCAL_BACKUP_SHA256=<verified-sha256> sh scripts/deploy-vds.sh --apply
    ```
 
-4. Record the backup dump, rollback-image file, nginx backup, restore result,
-   and smoke output. Verify `/privacy` and `/terms` display the approved identity.
-5. If a later regression requires manual rollback:
-
-   ```sh
-   FOCUSNOOK_NGINX_ROLLBACK_FILE=/opt/focusnook/releases/nginx-focusnook-TIMESTAMP.conf \
-     sh scripts/rollback-vds.sh /opt/focusnook/releases/rollback-image-TIMESTAMP.txt --apply
-   ```
+4. Record the local backup path, SHA-256, and smoke output. Verify `/privacy`
+   and `/terms` display the approved identity. Deployment-time rollback is
+   automatic; after a successful deploy no old FocusNook image or rollback file
+   is retained on the VDS.
 
 ## 4. Signed-build acceptance
 

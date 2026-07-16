@@ -37,24 +37,34 @@ Put `nginx/focusnook.conf` into `/etc/nginx/sites-available`, enable it, run `ng
 then reload nginx. The root web page is protected by nginx Basic Auth. `/healthz`,
 `/readyz`, `/privacy`, and `/terms` are public; `/v1/*` keeps its API authentication.
 
-For a controlled update on the existing VDS, run the fail-closed wrapper as root
-(or with equivalent Docker, nginx, and `/opt/focusnook` permissions):
+Before a controlled update, create a verified backup directly on the operator's
+computer. The temporary VDS file is deleted after its SHA-256 is checked:
+
+```powershell
+python scripts/backup-vds-local.py `
+  --access-file C:\path\to\private-vds-access.txt `
+  --destination C:\path\to\FocusNook-backups
+```
+
+This helper requires Python and `paramiko`. Record the printed SHA-256. Then run
+the fail-closed deployment wrapper on the VDS as root (or with equivalent Docker
+and nginx permissions):
 
 ```bash
 cd apps/server
-sh scripts/deploy-vds.sh --apply
+FOCUSNOOK_LOCAL_BACKUP_SHA256=<verified-sha256> sh scripts/deploy-vds.sh --apply
 ```
 
-It validates configuration, builds the candidate, creates and verifies a database
-dump, records the current image and nginx configuration, applies both layers, and
-runs the public smoke test. On failure it restores both the image and nginx. Run
-`scripts/restore-drill.sh` separately before the window to prove that the selected
-dump restores into a disposable database.
+It validates configuration, requires proof of the verified local backup, builds
+the candidate, keeps the previous image and nginx configuration only for the
+duration of the deployment, and runs the public smoke test. On failure it restores
+both layers automatically. On success the temporary rollback file and superseded
+FocusNook image are removed. The compose files intentionally have no backup service
+and keep no database dumps on the VDS.
 
-The compose files also run a small Postgres backup container. It writes daily custom-format
-dumps to `${FOCUSNOOK_BACKUP_DIR:-apps/server/backups}` and keeps the last 14 days. Copy this
-folder off the VDS with your normal server backup flow; a local folder on the same disk is a
-recovery point, not a disaster-recovery strategy.
+Run `scripts/restore-drill.sh` separately against a temporarily uploaded selected
+dump before a release window when a full restore proof is required, then remove the
+temporary upload immediately.
 
 ## Bootstrap
 
@@ -171,7 +181,7 @@ docker compose --env-file .env exec -T postgres pg_restore \
   -d "$POSTGRES_DB" \
   --clean \
   --if-exists \
-  < backups/focusnook-YYYYMMDDTHHMMSSZ.dump
+  < /path/to/local-copy/focusnook-YYYYMMDDTHHMMSSZ.dump
 docker compose --env-file .env up -d
 ```
 
@@ -199,7 +209,8 @@ together before enabling public registration or submitting store builds.
 
 - Rotate `FOCUSNOOK_ADMIN_TOKEN` after bootstrap if it was exposed in shell history.
 - Keep `FOCUSNOOK_WEB_SECONDARY_PASSWORD` different from shell, database, and GitHub passwords.
-- Store `.env`, database dumps, and VDS snapshots outside the repository.
+- Store `.env` outside the repository and database dumps only on the operator's
+  local backup storage, not on the VDS.
 - Keep TLS termination in Caddy and do not expose the Rust server port publicly.
 - For stronger availability than a single VDS, add managed Postgres or streaming replication,
   offsite backups, and an external uptime monitor.

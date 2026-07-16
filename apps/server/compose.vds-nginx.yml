@@ -46,28 +46,5 @@ services:
       timeout: 5s
       retries: 10
 
-  postgres-backup:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      FOCUSNOOK_BACKUP_INTERVAL_SECONDS: ${FOCUSNOOK_BACKUP_INTERVAL_SECONDS:-86400}
-    volumes:
-      - ${FOCUSNOOK_BACKUP_DIR:-./backups}:/backups
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          ts=$$(date -u +%Y%m%dT%H%M%SZ)
-          PGPASSWORD="$${POSTGRES_PASSWORD}" pg_dump -h postgres -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -Fc -f "/backups/focusnook-$${ts}.dump"
-          find /backups -type f -name "focusnook-*.dump" -mtime +14 -delete
-          sleep "$${FOCUSNOOK_BACKUP_INTERVAL_SECONDS}"
-        done
-
 volumes:
   focusnook-postgres:
