@@ -14,6 +14,10 @@ base_url="${FOCUSNOOK_BASE_URL:-https://focus.proanima.net}"
 nginx_state_file="${FOCUSNOOK_NGINX_ROLLBACK_FILE:-}"
 nginx_target="${FOCUSNOOK_NGINX_TARGET:-/etc/nginx/sites-available/focusnook.conf}"
 image="$(sed -n '1p' "$state_file")"
+expect_legal=0
+if grep -q '^FOCUSNOOK_LEGAL_NAME=.' "$env_file"; then
+  expect_legal=1
+fi
 test -n "$image" || { echo "rollback state is empty" >&2; exit 1; }
 
 docker image inspect "$image" >/dev/null
@@ -25,5 +29,5 @@ if [ -n "$nginx_state_file" ]; then
   nginx -t
   nginx -s reload
 fi
-sh "$script_dir/smoke-test.sh" "$base_url"
+FOCUSNOOK_EXPECT_LEGAL="$expect_legal" sh "$script_dir/smoke-test.sh" "$base_url"
 echo "Rollback completed with image ${image}"

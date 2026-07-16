@@ -189,6 +189,12 @@ the bearer-token sync API:
 
 The console never decrypts or displays planner content. It is operational telemetry only.
 
+For a private sync-only deployment, omit all four `FOCUSNOOK_LEGAL_*` /
+`FOCUSNOOK_SUPPORT_EMAIL` values. The server still provides login, device,
+sync, blob, admin, health, and account-deletion APIs, while `/privacy`,
+`/terms`, and self-registration return `404`. Configure all four values
+together before enabling public registration or submitting store builds.
+
 ## Production Notes
 
 - Rotate `FOCUSNOOK_ADMIN_TOKEN` after bootstrap if it was exposed in shell history.

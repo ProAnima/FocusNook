@@ -16,6 +16,10 @@ state_dir="${FOCUSNOOK_RELEASE_STATE_DIR:-/opt/focusnook/releases}"
 nginx_source="${FOCUSNOOK_NGINX_SOURCE:-${server_dir}/nginx/focusnook.conf}"
 nginx_target="${FOCUSNOOK_NGINX_TARGET:-/etc/nginx/sites-available/focusnook.conf}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+expect_legal=0
+if grep -q '^FOCUSNOOK_LEGAL_NAME=.' "$env_file"; then
+  expect_legal=1
+fi
 
 compose() {
   docker compose -p "$project" --env-file "$env_file" -f "$compose_file" "$@"
@@ -78,7 +82,7 @@ fi
 compose up -d --no-deps server
 nginx -s reload
 
-if sh "$script_dir/smoke-test.sh" "$base_url"; then
+if FOCUSNOOK_EXPECT_LEGAL="$expect_legal" sh "$script_dir/smoke-test.sh" "$base_url"; then
   image_rollback_needed=0
   nginx_rollback_needed=0
   trap - EXIT INT TERM

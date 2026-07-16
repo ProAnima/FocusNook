@@ -49,12 +49,22 @@ async fn admin_console() -> Html<&'static str> {
     Html(ADMIN_HTML)
 }
 
-async fn privacy_policy(State(state): State<AppState>) -> Html<String> {
-    Html(state.config.legal_identity.privacy_html())
+async fn privacy_policy(State(state): State<AppState>) -> AppResult<Html<String>> {
+    let identity = state
+        .config
+        .legal_identity
+        .as_ref()
+        .ok_or(AppError::NotFound)?;
+    Ok(Html(identity.privacy_html()))
 }
 
-async fn terms(State(state): State<AppState>) -> Html<String> {
-    Html(state.config.legal_identity.terms_html())
+async fn terms(State(state): State<AppState>) -> AppResult<Html<String>> {
+    let identity = state
+        .config
+        .legal_identity
+        .as_ref()
+        .ok_or(AppError::NotFound)?;
+    Ok(Html(identity.terms_html()))
 }
 
 async fn healthz() -> Json<HealthResponse> {
@@ -193,6 +203,9 @@ async fn register_account(
     headers: HeaderMap,
     Json(request): Json<AccountAuthRequest>,
 ) -> AppResult<Json<AccountAuthResponse>> {
+    if state.config.legal_identity.is_none() {
+        return Err(AppError::NotFound);
+    }
     if !request.privacy_accepted
         || request.privacy_policy_version.as_deref() != Some(PRIVACY_POLICY_VERSION)
     {

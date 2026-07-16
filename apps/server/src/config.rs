@@ -13,7 +13,7 @@ pub struct Config {
     pub max_blob_bytes: usize,
     pub max_operation_payload_bytes: usize,
     pub max_ops_per_exchange: i64,
-    pub legal_identity: LegalIdentity,
+    pub legal_identity: Option<LegalIdentity>,
     pub public_base_url: String,
     pub token_pepper: Vec<u8>,
 }
@@ -33,15 +33,44 @@ impl Config {
             )
             .parse()?,
             max_ops_per_exchange: optional("FOCUSNOOK_MAX_OPS_PER_EXCHANGE", "500").parse()?,
-            legal_identity: LegalIdentity {
-                address: required("FOCUSNOOK_LEGAL_ADDRESS")?,
-                name: required("FOCUSNOOK_LEGAL_NAME")?,
-                support_email: required("FOCUSNOOK_SUPPORT_EMAIL")?,
-                tax_id: required("FOCUSNOOK_LEGAL_TAX_ID")?,
-            },
+            legal_identity: optional_legal_identity()?,
             public_base_url: optional("FOCUSNOOK_PUBLIC_BASE_URL", "http://localhost:8080"),
             token_pepper: decode_key("FOCUSNOOK_TOKEN_PEPPER_B64")?,
         })
+    }
+}
+
+fn optional_legal_identity() -> AppResult<Option<LegalIdentity>> {
+    legal_identity_from_values([
+        std::env::var("FOCUSNOOK_LEGAL_ADDRESS").ok(),
+        std::env::var("FOCUSNOOK_LEGAL_NAME").ok(),
+        std::env::var("FOCUSNOOK_SUPPORT_EMAIL").ok(),
+        std::env::var("FOCUSNOOK_LEGAL_TAX_ID").ok(),
+    ])
+}
+
+fn legal_identity_from_values(values: [Option<String>; 4]) -> AppResult<Option<LegalIdentity>> {
+    let [address, name, support_email, tax_id] = values.map(|value| {
+        value
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+    });
+    if [&address, &name, &support_email, &tax_id]
+        .iter()
+        .all(|value| value.is_none())
+    {
+        return Ok(None);
+    }
+    match (address, name, support_email, tax_id) {
+        (Some(address), Some(name), Some(support_email), Some(tax_id)) => Ok(Some(LegalIdentity {
+            address,
+            name,
+            support_email,
+            tax_id,
+        })),
+        _ => Err(AppError::Config(
+            "legal identity must be either fully configured or fully omitted".to_string(),
+        )),
     }
 }
 
@@ -73,5 +102,19 @@ mod tests {
         std::env::set_var("BAD_KEY", "YWJj");
         let err = decode_key("BAD_KEY").err();
         assert!(matches!(err, Some(AppError::Config(_))));
+    }
+
+    #[test]
+    fn legal_identity_can_be_disabled_for_private_sync() {
+        assert!(matches!(
+            legal_identity_from_values([None, None, None, None]),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn legal_identity_rejects_partial_configuration() {
+        let result = legal_identity_from_values([Some("address".into()), None, None, None]);
+        assert!(matches!(result, Err(AppError::Config(_))));
     }
 }
