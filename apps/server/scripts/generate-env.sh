@@ -19,11 +19,20 @@ secret() {
 need_openssl
 umask 077
 
-postgres_password="$(secret)"
+postgres_password="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
 admin_token="fnk_admin_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
 web_secondary_password="fnk_web_$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n')"
 token_pepper="$(secret)"
 encryption_key="$(secret)"
+legal_name="${FOCUSNOOK_LEGAL_NAME:-}"
+legal_tax_id="${FOCUSNOOK_LEGAL_TAX_ID:-}"
+legal_address="${FOCUSNOOK_LEGAL_ADDRESS:-}"
+support_email="${FOCUSNOOK_SUPPORT_EMAIL:-info@proanima.net}"
+
+if [ -z "$legal_name" ] || [ -z "$legal_tax_id" ] || [ -z "$legal_address" ]; then
+  echo "FOCUSNOOK_LEGAL_NAME, FOCUSNOOK_LEGAL_TAX_ID, and FOCUSNOOK_LEGAL_ADDRESS are required" >&2
+  exit 1
+fi
 
 cat > .env <<EOF
 POSTGRES_DB=${postgres_db}
@@ -39,6 +48,10 @@ FOCUSNOOK_ADMIN_TOKEN=${admin_token}
 FOCUSNOOK_WEB_SECONDARY_PASSWORD=${web_secondary_password}
 FOCUSNOOK_TOKEN_PEPPER_B64=${token_pepper}
 FOCUSNOOK_ENCRYPTION_KEY_B64=${encryption_key}
+FOCUSNOOK_LEGAL_NAME=${legal_name}
+FOCUSNOOK_LEGAL_TAX_ID=${legal_tax_id}
+FOCUSNOOK_LEGAL_ADDRESS=${legal_address}
+FOCUSNOOK_SUPPORT_EMAIL=${support_email}
 
 FOCUSNOOK_MAX_OPS_PER_EXCHANGE=500
 FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES=262144

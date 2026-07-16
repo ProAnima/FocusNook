@@ -23,6 +23,8 @@ const {
   serverSyncLogin,
   serverSyncRegister,
   serverSyncDisconnect,
+  serverSyncDeleteAccount,
+  openPrivacy,
 } = vi.hoisted(() => ({
   getAutostart: vi.fn().mockResolvedValue(false),
   setAutostart: vi.fn().mockResolvedValue(undefined),
@@ -75,6 +77,8 @@ const {
     message: null,
   }),
   serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
+  serverSyncDeleteAccount: vi.fn().mockResolvedValue(undefined),
+  openPrivacy: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../shared/commands", () => ({
@@ -96,7 +100,9 @@ vi.mock("../shared/commands", () => ({
       login: serverSyncLogin,
       register: serverSyncRegister,
       disconnect: serverSyncDisconnect,
+      deleteAccount: serverSyncDeleteAccount,
     },
+    legal: { openPrivacy },
   },
 }));
 
@@ -210,53 +216,12 @@ describe("SettingsPanel", () => {
     expect(await screen.findByText("Не удалось экспортировать диагностику")).toBeInTheDocument();
   });
 
-  it("shows not-connected status for both sync providers by default", async () => {
-    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
-
-    expect(await screen.findAllByText("Не подключено")).toHaveLength(2);
-  });
-
   it("shows the local sync operation journal status", async () => {
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
     expect(await screen.findByText("7")).toBeInTheDocument();
     expect(await screen.findByText("devicehash")).toBeInTheDocument();
     expect(await screen.findByText("2026-07-06 12:30:00")).toBeInTheDocument();
-  });
-
-  it("starts the auth flow when Connect is clicked for a disconnected provider", async () => {
-    const user = userEvent.setup();
-    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
-
-    await screen.findAllByText("Не подключено");
-    const [googleConnect] = await screen.findAllByText("Подключить");
-    await user.click(googleConnect);
-
-    expect(syncStart).toHaveBeenCalledWith("google_drive");
-  });
-
-  it("shows an error when starting auth fails", async () => {
-    syncStart.mockRejectedValueOnce(new Error("provider not configured"));
-    const user = userEvent.setup();
-    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
-
-    const [googleConnect] = await screen.findAllByText("Подключить");
-    await user.click(googleConnect);
-
-    expect(await screen.findByText("Не удалось подключить — проверьте настройку провайдера")).toBeInTheDocument();
-  });
-
-  it("disconnects an already-connected provider", async () => {
-    syncStatus.mockImplementation((provider: string) =>
-      Promise.resolve({ connected: provider === "yandex_disk" }),
-    );
-    const user = userEvent.setup();
-    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
-
-    const disconnectButton = await screen.findByText("Отключить");
-    await user.click(disconnectButton);
-
-    expect(syncDisconnect).toHaveBeenCalledWith("yandex_disk");
   });
 
   it("signs into the configured server account", async () => {
@@ -279,8 +244,43 @@ describe("SettingsPanel", () => {
     await user.type(screen.getByPlaceholderText("Имя"), "User");
     await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
     await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByText("Создать аккаунт"));
 
-    expect(serverSyncRegister).toHaveBeenCalledWith("user@example.com", "StrongPass123", "User");
+    expect(serverSyncRegister).toHaveBeenCalledWith("user@example.com", "StrongPass123", "User", true);
+  });
+
+  it("requires privacy consent before account creation", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.click(await screen.findByText("Регистрация"));
+    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
+    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+
+    expect(screen.getByText("Создать аккаунт")).toBeDisabled();
+    await user.click(screen.getByText("Открыть политику конфиденциальности"));
+    expect(openPrivacy).toHaveBeenCalledOnce();
+  });
+
+  it("deletes a connected server account only after password confirmation", async () => {
+    serverSyncStatus.mockResolvedValueOnce({
+      available: true,
+      accountEmail: "user@example.com",
+      accountUserId: "user-1",
+      connected: true,
+      displayName: "User",
+      endpoint: "https://focus.proanima.net",
+      mediaReady: true,
+      message: null,
+    });
+    const user = userEvent.setup();
+    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
+
+    await user.click(await screen.findByText("Удалить аккаунт и данные"));
+    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(screen.getByText("Удалить безвозвратно"));
+
+    expect(serverSyncDeleteAccount).toHaveBeenCalledWith("StrongPass123");
   });
 });

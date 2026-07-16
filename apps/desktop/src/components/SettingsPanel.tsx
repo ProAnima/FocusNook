@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { Activity, Check, ChevronDown, Cloud, Database, KeyRound, Mic, RefreshCw, Server, ShieldCheck, UserRound, X } from "lucide-react";
+import { Activity, Check, ChevronDown, KeyRound, Mic, RefreshCw, Server, ShieldCheck, UserRound, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
-import { commands, type Locale, type NoteFolderSort, type SyncProvider } from "../shared/commands";
+import { commands, type Locale, type NoteFolderSort } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
 import { LOCALES, LOCALE_LABELS } from "../shared/translations";
 import { useLocale } from "../shared/useLocale";
@@ -271,18 +270,6 @@ function DiagnosticsSection() {
   );
 }
 
-function useConnectionStatus(provider: SyncProvider) {
-  const [connected, setConnected] = useState(false);
-  const refresh = useCallback(() => {
-    commands.sync
-      .status(provider)
-      .then((status) => setConnected(status.connected))
-      .catch(() => setConnected(false));
-  }, [provider]);
-  useEffect(() => refresh(), [refresh]);
-  return { connected, refresh };
-}
-
 function useSyncReadiness() {
   const [status, setStatus] = useState<Awaited<ReturnType<typeof commands.sync.readiness>> | null>(null);
   const [failed, setFailed] = useState(false);
@@ -334,62 +321,6 @@ function SyncReadinessCard() {
   );
 }
 
-// "Подключено" здесь значит "есть сохранённый refresh-токен" (см.
-// sync.rs::connection_status) — не подтверждённая живая проверка. Кнопка не
-// делает различий между "провайдер не настроен в sync_providers.json" и
-// "OAuth реально не прошёл" — оба случая ведут на один и тот же settings.syncError,
-// осознанно минимальный UI для этого шага (только доказать, что флоу работает).
-function SyncProviderRow({
-  provider,
-  label,
-  description,
-  icon,
-}: {
-  provider: SyncProvider;
-  label: string;
-  description: string;
-  icon: ReactNode;
-}) {
-  const { t } = useLocale();
-  const { connected, refresh } = useConnectionStatus(provider);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-
-  async function handleClick() {
-    setError(false);
-    setBusy(true);
-    try {
-      if (connected) {
-        await commands.sync.disconnect(provider);
-      } else {
-        await commands.sync.start(provider);
-      }
-      refresh();
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className={`sync-provider-row ${connected ? "is-connected" : ""}`}>
-      <div className="sync-provider-icon">{icon}</div>
-      <div className="sync-provider-info">
-        <span>{label}</span>
-        <span className="sync-provider-description">{description}</span>
-        <span className="settings-hint">
-          {connected ? t("settings.syncConnected") : t("settings.syncNotConnected")}
-        </span>
-      </div>
-      <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
-        {busy ? t("settings.syncConnecting") : connected ? t("settings.syncDisconnect") : t("settings.syncConnect")}
-      </button>
-      {error && <p className="note-error">{t("settings.syncError")}</p>}
-    </div>
-  );
-}
-
 function ServerSyncRow() {
   const { t } = useLocale();
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -402,6 +333,9 @@ function ServerSyncRow() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repairPassword, setRepairPassword] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -450,7 +384,7 @@ function ServerSyncRow() {
         const nextName = name.trim();
         const status =
           mode === "register"
-            ? await commands.serverSync.register(nextEmail, password, nextName)
+            ? await commands.serverSync.register(nextEmail, password, nextName, privacyAccepted)
             : await commands.serverSync.login(nextEmail, password);
         setAvailable(status.available);
         setConnected(status.connected);
@@ -492,6 +426,28 @@ function ServerSyncRow() {
     }
   }
 
+  async function handleDeleteAccount() {
+    if (!deletePassword) {
+      return;
+    }
+    setBusy(true);
+    setError(false);
+    try {
+      await commands.serverSync.deleteAccount(deletePassword);
+      setConnected(false);
+      setAccountEmail(null);
+      setDisplayName(null);
+      setMediaReady(false);
+      setDeletePassword("");
+      setDeleteOpen(false);
+      refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (connected) {
     return (
       <div className="server-account-card is-connected">
@@ -507,6 +463,34 @@ function ServerSyncRow() {
           <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
             {busy ? t("settings.syncConnecting") : t("settings.syncDisconnect")}
           </button>
+        </div>
+        <div className="server-account-delete">
+          {!deleteOpen ? (
+            <button className="danger-link" type="button" onClick={() => setDeleteOpen(true)} disabled={busy}>
+              {t("settings.syncServerDelete")}
+            </button>
+          ) : (
+            <>
+              <p className="settings-hint">{t("settings.syncServerDeleteHint")}</p>
+              <input
+                className="server-sync-input"
+                value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)}
+                placeholder={t("settings.syncServerPassword")}
+                autoComplete="current-password"
+                type="password"
+              />
+              <div className="server-account-delete-actions">
+                <button className="preset-button" type="button" onClick={() => setDeleteOpen(false)} disabled={busy}>
+                  {t("common.cancel")}
+                </button>
+                <button className="danger-button" type="button" onClick={() => void handleDeleteAccount()} disabled={busy || !deletePassword}>
+                  {busy ? t("settings.syncConnecting") : t("settings.syncServerDeleteConfirm")}
+                </button>
+              </div>
+              {error && <p className="note-error">{t("settings.syncServerDeleteError")}</p>}
+            </>
+          )}
         </div>
         {!mediaReady && (
           <div className="server-account-repair">
@@ -582,14 +566,23 @@ function ServerSyncRow() {
           type="password"
         />
         {mode === "register" && (
-          <p className={`settings-hint server-password-hint ${registerPasswordTooShort ? "is-error" : ""}`}>
-            {t("settings.syncServerPasswordHint")}
-          </p>
+          <>
+            <p className={`settings-hint server-password-hint ${registerPasswordTooShort ? "is-error" : ""}`}>
+              {t("settings.syncServerPasswordHint")}
+            </p>
+            <label className="server-privacy-consent">
+              <input type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
+              <span>{t("settings.syncServerPrivacyConsent")}</span>
+            </label>
+            <button className="privacy-link" type="button" onClick={() => void commands.legal.openPrivacy()}>
+              {t("settings.syncServerPrivacyOpen")}
+            </button>
+          </>
         )}
         <button
           className="preset-button"
           onClick={() => void handleClick()}
-          disabled={busy || !available || !email.trim() || !password || registerPasswordInvalid}
+          disabled={busy || !available || !email.trim() || !password || registerPasswordInvalid || (mode === "register" && !privacyAccepted)}
         >
           {busy ? t("settings.syncConnecting") : mode === "register" ? t("settings.syncServerCreate") : t("settings.syncServerSignIn")}
         </button>
@@ -612,18 +605,10 @@ function SyncSection() {
         </div>
       </div>
       <SyncReadinessCard />
-      <SyncProviderRow
-        provider="google_drive"
-        label={t("settings.syncGoogleDrive")}
-        description={t("settings.syncGoogleDriveDesc")}
-        icon={<Cloud size={15} />}
-      />
-      <SyncProviderRow
-        provider="yandex_disk"
-        label={t("settings.syncYandexDisk")}
-        description={t("settings.syncYandexDiskDesc")}
-        icon={<Database size={15} />}
-      />
+      {/* Google Drive/Yandex Disk адаптеры отключены от UI на v1 (VDS-only,
+          см. docs/v1-release-plan.md) — Rust/plugin-код остаётся в дереве
+          нетронутым для пост-v1, но провайдеры больше не показываются и не
+          подключаемы отсюда. */}
       <ServerSyncRow />
       <p className="settings-secure-note">
         <KeyRound size={12} />

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-connected"
+description = "Enables the is_connected command without any pre-configured scope."
+commands.allow = ["is_connected"]
+
+[[permission]]
+identifier = "deny-is-connected"
+description = "Denies the is_connected command without any pre-configured scope."
+commands.deny = ["is_connected"]

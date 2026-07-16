@@ -1,11 +1,9 @@
 use rusqlite::Connection;
-use std::path::Path;
-#[cfg(any(not(target_os = "android"), test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-// Раздел 9 ТЗ: локальная база на профиль. Пока нет multi-account — один файл
-// на дефолтный профиль; per-profile пути придут вместе с Iteration 1.
+// Раздел 9 ТЗ: локальная база на профиль — один файл на профиль, путь и
+// per-profile ключ приходят из profiles::vault_location (раздел 15).
 pub struct Db(pub Mutex<Connection>);
 
 const MIGRATIONS: &[&str] = &[
@@ -98,13 +96,13 @@ const MIGRATIONS: &[&str] = &[
 #[cfg(not(target_os = "android"))]
 const KEYRING_SERVICE: &str = "com.proanima.focusnook";
 
-#[cfg(not(target_os = "android"))]
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-#[cfg(not(target_os = "android"))]
-fn generate_key_hex() -> String {
+// pub(crate), не private: android_vault_key.rs генерирует тем же способом
+// ключ, который потом уходит не в OS keyring, а через Keystore-плагин.
+pub(crate) fn generate_key_hex() -> String {
     let mut bytes = Vec::with_capacity(32);
     bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
     bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
@@ -145,20 +143,21 @@ fn vault_key(keyring_user: &str) -> Result<String, String> {
 
 // notes.rs шифрует аудиофайлы производным от этого же ключа (см.
 // audio_crypto.rs) — им нужен per-profile секрет, но не сам PRAGMA key
-// напрямую (доменное разделение). На Android своего Keystore-эквивалента
-// пока нет (раздел 26), поэтому там аудио остаётся как есть, без шифрования
-// — тот же уровень защиты, что уже честно объявлен для самой БД.
+// напрямую (доменное разделение). Только десктоп: на Android эквивалентный
+// ключ приходит из android_vault_key::resolve_for_platform, не отсюда —
+// lib.rs вызывает эту функцию только когда android_key_hex вернул None.
 #[cfg(not(target_os = "android"))]
 pub fn vault_key_for_audio(keyring_user: &str) -> Result<Option<String>, String> {
     vault_key(keyring_user).map(Some)
 }
 
-#[cfg(target_os = "android")]
-pub fn vault_key_for_audio(_keyring_user: &str) -> Result<Option<String>, String> {
-    Ok(None)
-}
-
-#[cfg(not(target_os = "android"))]
+// cfg_attr(android, allow(dead_code)) на этом и следующих двух элементах —
+// определения нужны компилируемыми на Android уже сейчас (сборка целиком,
+// см. Cargo.toml), но единственный вызов migrate_plaintext_if_needed внутри
+// open() остаётся выключен на Android до тех пор, пока android-таргет
+// rusqlite не начнёт реально линковаться с SQLCipher (см. docs/v1-release-plan.md)
+// — sqlcipher_export на обычном SQLite это не no-op, а хардфейл.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 const SQLITE_PLAINTEXT_MAGIC: &[u8; 16] = b"SQLite format 3\0";
 
 // Настоящий (незашифрованный) SQLite-файл всегда начинается с этой сигнатуры;
@@ -166,7 +165,7 @@ const SQLITE_PLAINTEXT_MAGIC: &[u8; 16] = b"SQLite format 3\0";
 // Разбор ошибок чтения (файла нет / он короче 16 байт) как "не похоже на
 // plaintext" — не ошибка сама по себе, migrate_plaintext_if_needed ниже и так
 // отдельно проверяет существование файла до вызова этой функции.
-#[cfg(not(target_os = "android"))]
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn looks_like_plaintext_sqlite(path: &Path) -> bool {
     use std::io::Read;
     let Ok(mut file) = std::fs::File::open(path) else {
@@ -193,7 +192,7 @@ fn looks_like_plaintext_sqlite(path: &Path) -> bool {
 // Если предыдущая попытка миграции упала между этими двумя шагами (path
 // уже нет, а .plaintext-backup ещё есть) — доводим её до конца с backup,
 // а не заводим на его месте пустой новый vault.
-#[cfg(not(target_os = "android"))]
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String> {
     let backup_path = PathBuf::from(format!("{}.plaintext-backup", path.display()));
 
@@ -231,28 +230,43 @@ fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String>
     Ok(())
 }
 
-// На Android этот же вызов открывает обычный незашифрованный SQLite (см.
-// комментарий у target-specific rusqlite-зависимостей в Cargo.toml): сборка
-// bundled-sqlcipher-vendored-openssl с Windows-хоста под Android не собирается
-// из-за требований Perl в OpenSSL Configure — открытый риск раздела 26.
-pub fn open(path: &Path, keyring_user: &str) -> Result<Connection, String> {
-    #[cfg(target_os = "android")]
-    let _ = keyring_user;
+// android_key_hex — ключ, уже полученный вызывающим кодом через
+// android_vault_key::resolve_for_platform ДО этого вызова (нужен AppHandle,
+// которого у db.rs нет и не должно быть — см. android_vault_key.rs). На
+// desktop параметр игнорируется, там ключ по-прежнему берётся из OS keyring
+// напрямую внутри этой функции, без изменений.
+pub fn open(
+    path: &Path,
+    keyring_user: &str,
+    android_key_hex: Option<&str>,
+) -> Result<Connection, String> {
+    #[cfg(not(target_os = "android"))]
+    let _ = android_key_hex;
     #[cfg(not(target_os = "android"))]
     let key = vault_key(keyring_user)?;
+    #[cfg(target_os = "android")]
+    let _ = keyring_user;
+    #[cfg(target_os = "android")]
+    let key = android_key_hex
+        .ok_or_else(|| "android vault key was not resolved before db::open".to_string())?
+        .to_string();
+
+    // Только desktop: на Android этот шаг остаётся выключен, пока
+    // android-таргет rusqlite реально не линкуется с SQLCipher (см. Cargo.toml
+    // и docs/v1-release-plan.md) — sqlcipher_export на обычном SQLite не no-op,
+    // а хардфейл "no such function", в отличие от PRAGMA key ниже.
     #[cfg(not(target_os = "android"))]
     migrate_plaintext_if_needed(path, &key)?;
 
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
 
-    #[cfg(not(target_os = "android"))]
-    {
-        // Raw-key синтаксис SQLCipher: PRAGMA key = "x'<64 hex>'" — обязательно
-        // через execute_batch как есть, иначе rusqlite экранирует кавычки внутри
-        // значения и это перестаёт быть распознаваемым BLOB-литералом.
-        conn.execute_batch(&format!("PRAGMA key = \"x'{key}'\";"))
-            .map_err(|e| e.to_string())?;
-    }
+    // Raw-key синтаксис SQLCipher: PRAGMA key = "x'<64 hex>'" — обязательно
+    // через execute_batch как есть, иначе rusqlite экранирует кавычки внутри
+    // значения и это перестаёт быть распознаваемым BLOB-литералом. На Android,
+    // пока rusqlite собирается без sqlcipher-фичи, неизвестная PRAGMA — это
+    // безопасный no-op в самом SQLite, а не ошибка.
+    conn.execute_batch(&format!("PRAGMA key = \"x'{key}'\";"))
+        .map_err(|e| e.to_string())?;
 
     for migration in MIGRATIONS {
         conn.execute(migration, []).map_err(|e| e.to_string())?;
@@ -530,13 +544,13 @@ mod tests {
         write_plaintext_db_with_a_row(&path);
         let keyring_user = format!("db-test-audio-key-{}", uuid::Uuid::now_v7());
 
-        let conn = open(&path, &keyring_user).unwrap();
+        let conn = open(&path, &keyring_user, None).unwrap();
         assert_eq!(read_legacy_title(&conn), "legacy task");
         drop(conn);
 
         // Повторный open() с тем же keyring_user продолжает работать нормально
         // (второй прогон не должен снова решить, что это plaintext).
-        let conn2 = open(&path, &keyring_user).unwrap();
+        let conn2 = open(&path, &keyring_user, None).unwrap();
         assert_eq!(read_legacy_title(&conn2), "legacy task");
         drop(conn2);
 

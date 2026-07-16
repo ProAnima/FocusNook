@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Defense in depth for API 23-30. The manifest disables Android backup for the
+  local-first vault entirely; this exclusion remains in case an OEM backup or
+  transfer implementation still evaluates the rules.
+-->
+<full-backup-content>
+    <exclude domain="file" path="." />
+</full-backup-content>

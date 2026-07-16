@@ -1,0 +1,25 @@
+# FocusNook Android release evidence
+
+- Version / versionCode:
+- Git commit:
+- Build timestamp UTC:
+- AAB absolute path:
+- AAB SHA-256:
+- Signing certificate SHA-256:
+- Builder and JDK/Android SDK versions:
+- `android-release-preflight.ps1` result:
+- VDS deploy state file:
+- VDS backup file and restore-drill result:
+- `/healthz`, `/readyz`, `/privacy`, `/terms` smoke result:
+- Huawei device model / Android version / AppGallery availability:
+- RuStore device model / Android version / store availability:
+- Desktop -> Android sync result:
+- Android -> desktop sync result:
+- Reminder after reboot result:
+- Voice note and encrypted attachment result:
+- Offline/reconnect result:
+- Account deletion result:
+- RuStore submission id/status:
+- AppGallery submission id/status:
+- Known limitations accepted for release:
+- Go/no-go approver and timestamp:

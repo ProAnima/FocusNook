@@ -1,3 +1,4 @@
+import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -12,6 +13,14 @@ val tauriProperties = Properties().apply {
         propFile.inputStream().use { load(it) }
     }
 }
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val hasReleaseSigning = keystorePropertiesFile.exists()
+val releaseRequested = gradle.startParameter.taskNames.any {
+    it.contains("Release") && (it.contains("assemble") || it.contains("bundle"))
+}
+require(!releaseRequested || hasReleaseSigning) {
+    "Missing gen/android/keystore.properties; release artifacts must never be unsigned"
+}
 
 android {
     compileSdk = 36
@@ -23,6 +32,24 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (hasReleaseSigning) create("release") {
+            val keystoreProperties = Properties().apply {
+                FileInputStream(keystorePropertiesFile).use { load(it) }
+            }
+            val password = requireNotNull(keystoreProperties.getProperty("password")) {
+                "keystore.properties is missing password"
+            }
+            keyAlias = requireNotNull(keystoreProperties.getProperty("keyAlias")) {
+                "keystore.properties is missing keyAlias"
+            }
+            keyPassword = password
+            storeFile = rootProject.file(requireNotNull(keystoreProperties.getProperty("storeFile")) {
+                "keystore.properties is missing storeFile"
+            })
+            storePassword = password
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -37,6 +64,7 @@ android {
             }
         }
         getByName("release") {
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

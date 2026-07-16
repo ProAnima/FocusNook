@@ -24,7 +24,7 @@ pub struct UploadBlobRequest {
     pub sha256: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadBlobResponse {
     pub bytes_base64: String,

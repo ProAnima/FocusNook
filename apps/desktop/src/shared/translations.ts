@@ -166,6 +166,12 @@ const ru = {
   "settings.syncServerMediaLocked": "Аудио требует подтверждения",
   "settings.syncServerMediaHint": "Введите пароль ещё раз, чтобы включить шифрованную синхронизацию голоса.",
   "settings.syncServerRepairMedia": "Включить аудио",
+  "settings.syncServerPrivacyConsent": "Я согласен с обработкой данных по политике конфиденциальности",
+  "settings.syncServerPrivacyOpen": "Открыть политику конфиденциальности",
+  "settings.syncServerDelete": "Удалить аккаунт и данные",
+  "settings.syncServerDeleteHint": "Введите пароль. Аккаунт и данные на сервере будут удалены безвозвратно.",
+  "settings.syncServerDeleteConfirm": "Удалить безвозвратно",
+  "settings.syncServerDeleteError": "Не удалось удалить аккаунт — проверьте пароль",
   "settings.accountSyncTitle": "Синхронизация профиля",
   "settings.accountSyncHint": "Подключения хранятся отдельно для активного профиля.",
   "settings.syncSecureNote": "Токены сохраняются в системном хранилище учетных данных.",
@@ -181,6 +187,7 @@ const ru = {
   "settings.syncNotConnected": "Не подключено",
   "settings.syncConnecting": "Подключение...",
   "settings.syncConnect": "Подключить",
+  "settings.syncNow": "Синхронизировать",
   "settings.syncEnable": "Включить",
   "settings.syncDisconnect": "Отключить",
   "settings.syncError": "Не удалось подключить — проверьте настройку провайдера",
@@ -349,6 +356,12 @@ const en: Dictionary = {
   "settings.syncServerMediaLocked": "Audio needs confirmation",
   "settings.syncServerMediaHint": "Enter the password once more to enable encrypted voice sync.",
   "settings.syncServerRepairMedia": "Enable audio",
+  "settings.syncServerPrivacyConsent": "I agree to data processing under the privacy policy",
+  "settings.syncServerPrivacyOpen": "Open privacy policy",
+  "settings.syncServerDelete": "Delete account and data",
+  "settings.syncServerDeleteHint": "Enter your password. The account and server data will be permanently deleted.",
+  "settings.syncServerDeleteConfirm": "Delete permanently",
+  "settings.syncServerDeleteError": "Failed to delete the account — check the password",
   "settings.accountSyncTitle": "Profile sync",
   "settings.accountSyncHint": "Connections are stored separately for the active profile.",
   "settings.syncSecureNote": "Tokens are saved in the system credential vault.",
@@ -364,6 +377,7 @@ const en: Dictionary = {
   "settings.syncNotConnected": "Not connected",
   "settings.syncConnecting": "Connecting...",
   "settings.syncConnect": "Connect",
+  "settings.syncNow": "Sync now",
   "settings.syncEnable": "Enable",
   "settings.syncDisconnect": "Disconnect",
   "settings.syncError": "Failed to connect — check the provider configuration",
@@ -455,6 +469,7 @@ const es = makeDictionary({
   "settings.syncNotConnected": "No conectado",
   "settings.syncConnecting": "Conectando...",
   "settings.syncConnect": "Conectar",
+  "settings.syncNow": "Sincronizar",
   "settings.syncDisconnect": "Desconectar",
   "settings.syncError": "No se pudo conectar — revisa la configuración del proveedor",
 });
@@ -516,6 +531,7 @@ const de = makeDictionary({
   "settings.syncNotConnected": "Nicht verbunden",
   "settings.syncConnecting": "Verbinden...",
   "settings.syncConnect": "Verbinden",
+  "settings.syncNow": "Jetzt synchronisieren",
   "settings.syncDisconnect": "Trennen",
 });
 
@@ -573,6 +589,7 @@ const fr = makeDictionary({
   "settings.syncNotConnected": "Non connecté",
   "settings.syncConnecting": "Connexion...",
   "settings.syncConnect": "Connecter",
+  "settings.syncNow": "Synchroniser",
   "settings.syncDisconnect": "Déconnecter",
 });
 
@@ -630,6 +647,7 @@ const pt = makeDictionary({
   "settings.syncNotConnected": "Não conectado",
   "settings.syncConnecting": "Conectando...",
   "settings.syncConnect": "Conectar",
+  "settings.syncNow": "Sincronizar agora",
   "settings.syncDisconnect": "Desconectar",
 });
 
@@ -684,6 +702,7 @@ const zh = makeDictionary({
   "settings.syncNotConnected": "未连接",
   "settings.syncConnecting": "正在连接...",
   "settings.syncConnect": "连接",
+  "settings.syncNow": "立即同步",
   "settings.syncDisconnect": "断开",
 });
 
@@ -738,6 +757,7 @@ const ja = makeDictionary({
   "settings.syncNotConnected": "未接続",
   "settings.syncConnecting": "接続中...",
   "settings.syncConnect": "接続",
+  "settings.syncNow": "今すぐ同期",
   "settings.syncDisconnect": "切断",
 });
 
@@ -792,6 +812,7 @@ const ko = makeDictionary({
   "settings.syncNotConnected": "연결 안 됨",
   "settings.syncConnecting": "연결 중...",
   "settings.syncConnect": "연결",
+  "settings.syncNow": "지금 동기화",
   "settings.syncDisconnect": "연결 해제",
 });
 
@@ -846,6 +867,7 @@ const hi = makeDictionary({
   "settings.syncNotConnected": "कनेक्टेड नहीं",
   "settings.syncConnecting": "कनेक्ट हो रहा है...",
   "settings.syncConnect": "कनेक्ट",
+  "settings.syncNow": "अभी सिंक करें",
   "settings.syncDisconnect": "डिस्कनेक्ट",
 });
 

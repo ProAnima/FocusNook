@@ -1172,8 +1172,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-autostart",
  "tauri-plugin-global-shortcut",
+ "tauri-plugin-google-auth",
  "tauri-plugin-opener",
  "tauri-plugin-reminder-alarm",
+ "tauri-plugin-secure-storage",
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tiny_http",
@@ -4082,6 +4084,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-google-auth"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tauri-plugin-opener"
 version = "2.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4105,6 +4117,16 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-reminder-alarm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tauri-plugin-secure-storage"
 version = "0.1.0"
 dependencies = [
  "serde",

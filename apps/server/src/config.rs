@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::legal::LegalIdentity;
 use base64::Engine;
 use std::net::SocketAddr;
 
@@ -12,6 +13,7 @@ pub struct Config {
     pub max_blob_bytes: usize,
     pub max_operation_payload_bytes: usize,
     pub max_ops_per_exchange: i64,
+    pub legal_identity: LegalIdentity,
     pub public_base_url: String,
     pub token_pepper: Vec<u8>,
 }
@@ -31,6 +33,12 @@ impl Config {
             )
             .parse()?,
             max_ops_per_exchange: optional("FOCUSNOOK_MAX_OPS_PER_EXCHANGE", "500").parse()?,
+            legal_identity: LegalIdentity {
+                address: required("FOCUSNOOK_LEGAL_ADDRESS")?,
+                name: required("FOCUSNOOK_LEGAL_NAME")?,
+                support_email: required("FOCUSNOOK_SUPPORT_EMAIL")?,
+                tax_id: required("FOCUSNOOK_LEGAL_TAX_ID")?,
+            },
             public_base_url: optional("FOCUSNOOK_PUBLIC_BASE_URL", "http://localhost:8080"),
             token_pepper: decode_key("FOCUSNOOK_TOKEN_PEPPER_B64")?,
         })

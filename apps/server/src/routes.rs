@@ -2,12 +2,13 @@ use crate::account_auth::{hash_password, normalize_email, validate_password, ver
 use crate::admin_web::ADMIN_HTML;
 use crate::auth::{issue_token, require_admin, require_device, require_user};
 use crate::error::{AppError, AppResult};
+use crate::legal::PRIVACY_POLICY_VERSION;
 use crate::state::AppState;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Html;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Json;
 use base64::Engine;
 use chrono::{DateTime, Utc};
@@ -24,12 +25,15 @@ pub fn router(state: AppState) -> axum::Router {
         .route("/", get(admin_console))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/privacy", get(privacy_policy))
+        .route("/terms", get(terms))
         .route("/v1/admin/web/login", post(admin_web_login))
         .route("/v1/admin/monitor", get(admin_monitor))
         .route("/v1/admin/stats", get(admin_stats))
         .route("/v1/admin/users", post(create_user))
         .route("/v1/accounts/register", post(register_account))
         .route("/v1/accounts/login", post(login_account))
+        .route("/v1/accounts", delete(delete_account))
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/exchange", post(exchange))
         .route("/v1/sync/events", get(wait_for_sync_event))
@@ -43,6 +47,14 @@ pub fn router(state: AppState) -> axum::Router {
 
 async fn admin_console() -> Html<&'static str> {
     Html(ADMIN_HTML)
+}
+
+async fn privacy_policy(State(state): State<AppState>) -> Html<String> {
+    Html(state.config.legal_identity.privacy_html())
+}
+
+async fn terms(State(state): State<AppState>) -> Html<String> {
+    Html(state.config.legal_identity.terms_html())
 }
 
 async fn healthz() -> Json<HealthResponse> {
@@ -181,6 +193,13 @@ async fn register_account(
     headers: HeaderMap,
     Json(request): Json<AccountAuthRequest>,
 ) -> AppResult<Json<AccountAuthResponse>> {
+    if !request.privacy_accepted
+        || request.privacy_policy_version.as_deref() != Some(PRIVACY_POLICY_VERSION)
+    {
+        return Err(AppError::BadRequest(
+            "privacy policy consent is required".to_string(),
+        ));
+    }
     let ip = client_ip(&headers);
     let email = normalize_email(&request.email)?;
     validate_password(&request.password)?;
@@ -189,7 +208,14 @@ async fn register_account(
     validate_label(&request.platform, "platform", 40)?;
     state.account_auth.record_registration(&ip)?;
     let display_name = account_display_name(request.display_name.as_deref(), &email)?;
-    let password_hash = hash_password(&request.password)?;
+    // P0 аудит: Argon2 — секунды CPU под нагрузкой, а не миллисекунды; синхронный
+    // вызов внутри async-хендлера блокирует сам Tokio worker-поток, а не только
+    // этот запрос. spawn_blocking уводит его в отдельный блокирующий пул, у
+    // которого уже есть свой верхний предел потоков (в отличие от worker-пула).
+    let password = request.password.clone();
+    let password_hash = tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|_| AppError::Internal("password hashing task panicked".to_string()))??;
     let mut tx = state.pool.begin().await?;
     let user_id =
         sqlx::query_scalar::<_, Uuid>("INSERT INTO users (display_name) VALUES ($1) RETURNING id")
@@ -211,6 +237,11 @@ async fn register_account(
         ));
     }
     account_result?;
+    sqlx::query("INSERT INTO privacy_consents (user_id, policy_version) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(PRIVACY_POLICY_VERSION)
+        .execute(&mut *tx)
+        .await?;
     let device_token = upsert_device_token(
         &mut tx,
         &state,
@@ -227,6 +258,33 @@ async fn register_account(
         display_name,
         user_id,
     }))
+}
+
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DeleteAccountRequest>,
+) -> AppResult<Json<HealthResponse>> {
+    let auth = require_device(&headers, &state).await?;
+    let password_hash = sqlx::query_scalar::<_, String>(
+        "SELECT password_hash FROM user_accounts WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+    let password = request.password;
+    let valid = tokio::task::spawn_blocking(move || verify_password(&password, &password_hash))
+        .await
+        .map_err(|_| AppError::Internal("password verification task panicked".to_string()))??;
+    if !valid {
+        return Err(AppError::Unauthorized);
+    }
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(auth.user_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(HealthResponse { ok: true }))
 }
 
 async fn login_account(
@@ -253,7 +311,15 @@ async fn login_account(
         state.account_auth.record_failure(&ip, &email)?;
         return Err(AppError::Unauthorized);
     };
-    if !verify_password(&request.password, &row.password_hash)? {
+    // См. комментарий у hash_password в register_account — то же самое для
+    // проверки пароля на входе.
+    let password = request.password.clone();
+    let stored_hash = row.password_hash.clone();
+    let password_is_valid =
+        tokio::task::spawn_blocking(move || verify_password(&password, &stored_hash))
+            .await
+            .map_err(|_| AppError::Internal("password verification task panicked".to_string()))??;
+    if !password_is_valid {
         state.account_auth.record_failure(&ip, &email)?;
         return Err(AppError::Unauthorized);
     }
@@ -904,17 +970,30 @@ fn require_admin_web_session(headers: &HeaderMap, state: &AppState) -> AppResult
     state.web_admin.authorize(token)
 }
 
+// P0 аудит: раньше X-Forwarded-For проверялся первым и брался первым
+// значением из списка — а nginx (см. focusnook.conf, $proxy_add_x_forwarded_for)
+// дописывает настоящий $remote_addr В КОНЕЦ существующего заголовка, а не
+// заменяет его, так что первое значение остаётся полностью под контролем
+// клиента. Любой желающий обойти rate-limit на логин/регистрацию просто
+// присылал свой X-Forwarded-For на каждый запрос.
+//
+// X-Real-IP — не то же самое: nginx выставляет его через `proxy_set_header
+// X-Real-IP $remote_addr`, что заменяет любое клиентское значение целиком, а
+// не дописывает к нему. Он всегда достоверен для этого конкретного nginx-фронта,
+// поэтому теперь основной источник — он; X-Forwarded-For остаётся только
+// запасным вариантом для деплоя без X-Real-IP (например, прямого доступа в
+// дев-окружении без nginx), где он настолько же спуфится, что и раньше.
 fn client_ip(headers: &HeaderMap) -> String {
     headers
-        .get("x-forwarded-for")
+        .get("x-real-ip")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .or_else(|| {
             headers
-                .get("x-real-ip")
+                .get("x-forwarded-for")
                 .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(',').next())
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
         })
@@ -1042,6 +1121,15 @@ struct AccountAuthRequest {
     device_id: String,
     device_name: String,
     platform: String,
+    #[serde(default)]
+    privacy_accepted: bool,
+    #[serde(default)]
+    privacy_policy_version: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DeleteAccountRequest {
+    password: String,
 }
 
 #[derive(Serialize)]
@@ -1185,6 +1273,7 @@ struct DbBlobMetadata {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
 
     #[test]
@@ -1197,6 +1286,38 @@ mod tests {
     fn validates_expected_hlc_shape() {
         assert!(validate_hlc("2026-07-06T19:22:10.100Z-0001-device-a").is_ok());
         assert!(validate_hlc("2026-07-06 19:22:10").is_err());
+    }
+
+    fn headers_with(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    // P0 аудит: nginx дописывает $remote_addr в конец X-Forwarded-For, а не
+    // заменяет его — так что клиент, приславший свой X-Forwarded-For, не
+    // может подменить X-Real-IP тем же трюком (nginx выставляет его через
+    // proxy_set_header, который заменяет значение целиком).
+    #[test]
+    fn client_ip_prefers_x_real_ip_over_a_spoofed_x_forwarded_for() {
+        let headers = headers_with(&[("x-forwarded-for", "1.2.3.4"), ("x-real-ip", "203.0.113.9")]);
+        assert_eq!(client_ip(&headers), "203.0.113.9");
+    }
+
+    #[test]
+    fn client_ip_falls_back_to_x_forwarded_for_without_x_real_ip() {
+        let headers = headers_with(&[("x-forwarded-for", "203.0.113.9, 10.0.0.1")]);
+        assert_eq!(client_ip(&headers), "203.0.113.9");
+    }
+
+    #[test]
+    fn client_ip_is_unknown_without_either_header() {
+        assert_eq!(client_ip(&HeaderMap::new()), "unknown");
     }
 
     #[test]

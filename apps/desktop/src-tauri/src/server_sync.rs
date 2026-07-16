@@ -1,4 +1,5 @@
 use crate::{blob_crypto, config, profiles, sync_blobs, sync_log};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,12 +10,13 @@ use tauri::{Emitter, Manager};
 const SERVER_SYNC_KEYRING_SERVICE: &str = "com.proanima.focusnook.server-sync";
 #[cfg(not(target_os = "android"))]
 const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
-const MAX_OPS_PER_EXCHANGE: usize = 100;
+pub(crate) const MAX_OPS_PER_EXCHANGE: usize = 100;
 const MAX_EXCHANGE_ROUNDS: usize = 20;
 const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const SERVER_EVENT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 const SERVER_EVENT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
 const FULL_RECONCILE_INTERVAL_SECONDS: i64 = 15 * 60;
+const PRIVACY_POLICY_VERSION: &str = "2026-07-16";
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -314,6 +316,13 @@ struct AccountAuthRequest<'a> {
     device_id: &'a str,
     device_name: &'a str,
     platform: &'a str,
+    privacy_accepted: bool,
+    privacy_policy_version: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct DeleteAccountRequest<'a> {
+    password: &'a str,
 }
 
 #[derive(Clone, Deserialize)]
@@ -325,6 +334,15 @@ struct AccountAuthResponse {
     user_id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerAccountRegistration {
+    display_name: String,
+    email: String,
+    password: String,
+    privacy_accepted: bool,
+}
+
 struct ServerAccountSession {
     email: String,
     display_name: String,
@@ -332,15 +350,15 @@ struct ServerAccountSession {
 }
 
 #[derive(Clone)]
-struct LocalOperation {
-    operation_id: String,
-    device_id: String,
-    entity_type: String,
-    entity_id: String,
-    op: String,
-    patch: String,
-    hlc: String,
-    schema_version: i32,
+pub(crate) struct LocalOperation {
+    pub(crate) operation_id: String,
+    pub(crate) device_id: String,
+    pub(crate) entity_type: String,
+    pub(crate) entity_id: String,
+    pub(crate) op: String,
+    pub(crate) patch: String,
+    pub(crate) hlc: String,
+    pub(crate) schema_version: i32,
 }
 
 #[derive(Serialize)]
@@ -376,17 +394,17 @@ struct SyncExchangeResponse {
     operations: Vec<RemoteOperation>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-struct RemoteOperation {
-    device_id: String,
-    entity_id: String,
-    entity_type: String,
-    hlc: String,
-    op: String,
-    operation_id: String,
-    payload_ciphertext: String,
-    schema_version: i32,
+pub(crate) struct RemoteOperation {
+    pub(crate) device_id: String,
+    pub(crate) entity_id: String,
+    pub(crate) entity_type: String,
+    pub(crate) hlc: String,
+    pub(crate) op: String,
+    pub(crate) operation_id: String,
+    pub(crate) payload_ciphertext: String,
+    pub(crate) schema_version: i32,
 }
 
 #[derive(Deserialize)]
@@ -428,7 +446,7 @@ async fn register_device(
     normalize_token(&body.device_token)
 }
 
-fn ensure_local_device_id(conn: &Connection) -> Result<String, String> {
+pub(crate) fn ensure_local_device_id(conn: &Connection) -> Result<String, String> {
     sync_log::ensure_device_identity(conn)
 }
 
@@ -439,6 +457,7 @@ async fn authenticate_account(
     password: &str,
     display_name: Option<&str>,
     device_id: &str,
+    privacy_accepted: bool,
 ) -> Result<(String, ServerAccountSession), String> {
     let response = reqwest::Client::new()
         .post(format!("{endpoint}{path}"))
@@ -449,6 +468,8 @@ async fn authenticate_account(
             device_id,
             device_name: device_display_name(),
             platform: std::env::consts::OS,
+            privacy_accepted,
+            privacy_policy_version: privacy_accepted.then_some(PRIVACY_POLICY_VERSION),
         })
         .send()
         .await
@@ -478,7 +499,10 @@ fn device_display_name() -> &'static str {
     }
 }
 
-fn last_pulled_hlc(conn: &Connection, profile_id: &str) -> Result<Option<String>, String> {
+pub(crate) fn last_pulled_hlc(
+    conn: &Connection,
+    profile_id: &str,
+) -> Result<Option<String>, String> {
     conn.query_row(
         "SELECT last_pulled_hlc FROM sync_pull_state WHERE profile_id = ?1",
         params![profile_id],
@@ -488,7 +512,7 @@ fn last_pulled_hlc(conn: &Connection, profile_id: &str) -> Result<Option<String>
     .map_err(|e| e.to_string())
 }
 
-fn store_last_pulled_hlc(
+pub(crate) fn store_last_pulled_hlc(
     conn: &Connection,
     profile_id: &str,
     last_pulled: Option<&str>,
@@ -533,7 +557,10 @@ fn mark_full_reconciled(conn: &Connection, profile_id: &str) -> Result<(), Strin
     Ok(())
 }
 
-fn unsynced_operations(conn: &Connection, profile_id: &str) -> Result<Vec<LocalOperation>, String> {
+pub(crate) fn unsynced_operations(
+    conn: &Connection,
+    profile_id: &str,
+) -> Result<Vec<LocalOperation>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT operation_id, device_id, entity_type, entity_id, op, patch, hlc, schema_version
@@ -562,7 +589,7 @@ fn unsynced_operations(conn: &Connection, profile_id: &str) -> Result<Vec<LocalO
     Ok(rows)
 }
 
-fn mark_synced(conn: &Connection, operation_ids: &[String]) -> Result<(), String> {
+pub(crate) fn mark_synced(conn: &Connection, operation_ids: &[String]) -> Result<(), String> {
     for id in operation_ids {
         conn.execute(
             "UPDATE sync_operations SET synced_at = datetime('now') WHERE operation_id = ?1",
@@ -610,7 +637,62 @@ fn prepare_account_scope_if_needed(
     Ok(())
 }
 
-fn client_operation(operation: &LocalOperation) -> ClientOperation {
+// P0 аудит: раньше payload_ciphertext буквально был operation.patch — открытый
+// JSON задачи/заметки/напоминания, никакого шифрования, несмотря на название
+// поля. Теперь шифруем тем же AES-256-GCM/media_key, что уже используется для
+// вложений (blob_crypto.rs) — не новая криптосхема, тот же примитив на новый
+// тип данных. media_key отсутствует только у профилей, подключённых через
+// старый admin-issued userToken без email/password логина (см.
+// account_auth.rs) — для них операции остаются как раньше, без шифрования,
+// а не ломаются; это тот же компромисс, что уже принят для blob-вложений
+// (сравни credentials.media_key.as_deref() в upload_pending_blobs выше).
+fn encode_operation_payload(media_key: Option<&str>, patch: &str) -> String {
+    match media_key.and_then(|key| blob_crypto::encrypt(key, patch.as_bytes()).ok()) {
+        Some(encrypted) => STANDARD.encode(encrypted),
+        None => patch.to_string(),
+    }
+}
+
+// Порядок проверки: сначала пробуем расшифровать (валидный base64 + верный
+// magic + успешный AEAD-тег) — если что-то из этого не сошлось (нет
+// media_key, старые незашифрованные данные, чужой ключ), падаем обратно на
+// "payload_ciphertext это и есть открытый JSON". Совпадение случайно
+// выглядящих plaintext-байт с валидным шифротекстом того же ключа
+// статистически исключено GCM-тегом, так что порядок проверки безопасен для
+// обратной совместимости со всем, что уже успело уйти на VDS/Google Drive
+// без шифрования до этого фикса.
+fn decode_operation_payload(
+    media_key: Option<&str>,
+    payload_ciphertext: &str,
+) -> Result<Value, String> {
+    let decrypted = media_key.and_then(|key| {
+        STANDARD
+            .decode(payload_ciphertext.trim())
+            .ok()
+            .and_then(|bytes| blob_crypto::decrypt(key, &bytes).ok())
+    });
+    let json_bytes = decrypted.unwrap_or_else(|| payload_ciphertext.as_bytes().to_vec());
+    serde_json::from_slice::<Value>(&json_bytes)
+        .map_err(|e| format!("remote operation payload is invalid json: {e}"))
+}
+
+pub(crate) fn remote_operation_from_local(
+    operation: &LocalOperation,
+    media_key: Option<&str>,
+) -> RemoteOperation {
+    RemoteOperation {
+        device_id: operation.device_id.clone(),
+        entity_id: operation.entity_id.clone(),
+        entity_type: operation.entity_type.clone(),
+        hlc: operation.hlc.clone(),
+        op: operation.op.clone(),
+        operation_id: operation.operation_id.clone(),
+        payload_ciphertext: encode_operation_payload(media_key, &operation.patch),
+        schema_version: operation.schema_version,
+    }
+}
+
+fn client_operation(operation: &LocalOperation, media_key: Option<&str>) -> ClientOperation {
     ClientOperation {
         device_id: operation.device_id.clone(),
         entity_id: operation.entity_id.clone(),
@@ -618,7 +700,7 @@ fn client_operation(operation: &LocalOperation) -> ClientOperation {
         hlc: operation.hlc.clone(),
         op: operation.op.clone(),
         operation_id: operation.operation_id.clone(),
-        payload_ciphertext: operation.patch.clone(),
+        payload_ciphertext: encode_operation_payload(media_key, &operation.patch),
         payload_key_id: None,
         payload_nonce: None,
         schema_version: operation.schema_version,
@@ -634,7 +716,10 @@ async fn exchange_with_server(
     let request = SyncExchangeRequest {
         device_id: credentials.device_id.clone(),
         last_pulled_hlc: last_pulled,
-        operations: operations.iter().map(client_operation).collect(),
+        operations: operations
+            .iter()
+            .map(|operation| client_operation(operation, credentials.media_key.as_deref()))
+            .collect(),
         profile_id: profile_id.to_string(),
     };
     let response = reqwest::Client::new()
@@ -932,11 +1017,14 @@ fn nullable_string_field(patch: &Value, key: &str) -> Option<Option<String>> {
     })
 }
 
-fn audio_blob_id_from_operation(operation: &RemoteOperation) -> Option<String> {
+pub(crate) fn audio_blob_id_from_operation(
+    operation: &RemoteOperation,
+    media_key: Option<&str>,
+) -> Option<String> {
     if !matches!(operation.entity_type.as_str(), "note" | "reminder") || operation.op == "delete" {
         return None;
     }
-    let patch = serde_json::from_str::<Value>(&operation.payload_ciphertext).ok()?;
+    let patch = decode_operation_payload(media_key, &operation.payload_ciphertext).ok()?;
     string_field(&patch, "audioPath").map(str::to_string)
 }
 
@@ -1128,11 +1216,12 @@ fn apply_reminder(
     }
 }
 
-fn apply_remote_operation(
+pub(crate) fn apply_remote_operation(
     conn: &Connection,
     profile_id: &str,
     local_device_id: &str,
     operation: &RemoteOperation,
+    media_key: Option<&str>,
 ) -> Result<(), String> {
     if operation.device_id == local_device_id {
         insert_remote_operation(conn, profile_id, operation)?;
@@ -1146,8 +1235,7 @@ fn apply_remote_operation(
         return Ok(());
     }
 
-    let patch = serde_json::from_str::<Value>(&operation.payload_ciphertext)
-        .map_err(|e| format!("remote operation payload is invalid json: {e}"))?;
+    let patch = decode_operation_payload(media_key, &operation.payload_ciphertext)?;
     match operation.entity_type.as_str() {
         "plan_item" => apply_plan_item(conn, operation, &patch)?,
         "note_group" => apply_note_group(conn, operation, &patch)?,
@@ -1173,7 +1261,13 @@ fn apply_exchange_response(
     let mut missing_blobs = Vec::new();
     let mut confirmed_pull_hlc = None;
     for operation in &response.operations {
-        apply_remote_operation(conn, profile_id, &credentials.device_id, operation)?;
+        apply_remote_operation(
+            conn,
+            profile_id,
+            &credentials.device_id,
+            operation,
+            credentials.media_key.as_deref(),
+        )?;
         let parsed_hlc = sync_log::Hlc::parse(&operation.hlc)
             .ok_or_else(|| format!("remote operation has invalid hlc: {}", operation.hlc))?;
         hlc_state
@@ -1184,7 +1278,9 @@ fn apply_exchange_response(
             .map_err(|e| e.to_string())?;
         confirmed_pull_hlc = Some(operation.hlc.clone());
         if operation.device_id != credentials.device_id {
-            if let Some(blob_id) = audio_blob_id_from_operation(operation) {
+            if let Some(blob_id) =
+                audio_blob_id_from_operation(operation, credentials.media_key.as_deref())
+            {
                 missing_blobs.push(blob_id);
             }
         }
@@ -1193,7 +1289,7 @@ fn apply_exchange_response(
     Ok((confirmed_pull_hlc.or(response.next_pull_hlc), missing_blobs))
 }
 
-fn reconcile_remote_reminder_alarm(
+pub(crate) fn reconcile_remote_reminder_alarm(
     app: &tauri::AppHandle,
     conn: &Connection,
     local_device_id: &str,
@@ -1506,24 +1602,26 @@ pub async fn register_server_account(
     db: tauri::State<'_, crate::db::Db>,
     config_state: tauri::State<'_, config::SyncProvidersConfig>,
     profiles_state: tauri::State<'_, profiles::ProfilesState>,
-    email: String,
-    password: String,
-    display_name: String,
+    request: ServerAccountRegistration,
 ) -> Result<ServerSyncStatus, String> {
+    if !request.privacy_accepted {
+        return Err("privacy policy consent is required".to_string());
+    }
     let endpoint = endpoint_from_config(&config_state)?;
     let device_id = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         ensure_local_device_id(&conn)?
     };
-    let display_name = display_name.trim().to_string();
+    let display_name = request.display_name.trim().to_string();
     let display_name_ref = (!display_name.is_empty()).then_some(display_name.as_str());
     let (token, account) = authenticate_account(
         &endpoint,
         "/v1/accounts/register",
-        &email,
-        &password,
+        &request.email,
+        &request.password,
         display_name_ref,
         &device_id,
+        true,
     )
     .await?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
@@ -1535,7 +1633,10 @@ pub async fn register_server_account(
         &token,
         &device_id,
         Some(&account),
-        Some(blob_crypto::derive_media_key(&account.email, &password)),
+        Some(blob_crypto::derive_media_key(
+            &account.email,
+            &request.password,
+        )),
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
@@ -1564,6 +1665,7 @@ pub async fn login_server_account(
         &password,
         None,
         &device_id,
+        false,
     )
     .await?;
     let profile_id = profiles::active_profile_id(&profiles_state)?;
@@ -1589,6 +1691,40 @@ pub fn disconnect_server_sync(
     profiles_state: tauri::State<profiles::ProfilesState>,
 ) -> Result<(), String> {
     let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    delete_credentials(Some(&conn), &profile_id)
+}
+
+#[tauri::command]
+pub async fn delete_server_account(
+    db: tauri::State<'_, crate::db::Db>,
+    profiles_state: tauri::State<'_, profiles::ProfilesState>,
+    password: String,
+) -> Result<(), String> {
+    if password.is_empty() {
+        return Err("account password is required".to_string());
+    }
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let credentials = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        load_credentials(Some(&conn), &profile_id)?
+            .ok_or_else(|| "server account is not connected".to_string())?
+    };
+    if credentials.account_user_id.is_none() {
+        return Err("connected credentials do not belong to an account".to_string());
+    }
+    let response = reqwest::Client::new()
+        .delete(format!("{}/v1/accounts", credentials.endpoint))
+        .bearer_auth(&credentials.token)
+        .json(&DeleteAccountRequest {
+            password: &password,
+        })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("sync server returned {}", response.status()));
+    }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_credentials(Some(&conn), &profile_id)
 }
@@ -1900,8 +2036,8 @@ mod tests {
             schema_version: 1,
         };
 
-        apply_remote_operation(&conn, "profile-1", "desktop-device", &operation)?;
-        apply_remote_operation(&conn, "profile-1", "desktop-device", &operation)?;
+        apply_remote_operation(&conn, "profile-1", "desktop-device", &operation, None)?;
+        apply_remote_operation(&conn, "profile-1", "desktop-device", &operation, None)?;
 
         let title: String = conn
             .query_row(
@@ -1959,7 +2095,7 @@ mod tests {
             schema_version: 1,
         };
 
-        apply_remote_operation(&conn, "profile-1", "phone-device", &stale_remote)?;
+        apply_remote_operation(&conn, "profile-1", "phone-device", &stale_remote, None)?;
 
         let status: String = conn
             .query_row(
@@ -2013,15 +2149,70 @@ mod tests {
             schema_version: 1,
         };
 
-        apply_remote_operation(&conn, "profile-1", "phone-device", &newer_delete)?;
+        apply_remote_operation(&conn, "profile-1", "phone-device", &newer_delete, None)?;
 
         let remaining: i64 = conn
-            .query_row("SELECT COUNT(*) FROM plan_items WHERE id = 'task-1'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM plan_items WHERE id = 'task-1'",
+                [],
+                |row| row.get(0),
+            )
             .map_err(|e| e.to_string())?;
 
         assert_eq!(remaining, 0);
         Ok(())
+    }
+
+    // P0 аудит: раньше payload_ciphertext был буквально operation.patch,
+    // никакого шифрования не было несмотря на название поля. Эти тесты
+    // проверяют, что сейчас это не так, и что старые незашифрованные данные
+    // (уже ушедшие на VDS/Google Drive до этого фикса) продолжают читаться.
+    #[test]
+    fn encode_operation_payload_encrypts_when_media_key_present() {
+        let patch = r#"{"title":"Buy groceries","status":"open"}"#;
+        let encoded = encode_operation_payload(Some("test-media-key"), patch);
+        assert_ne!(encoded, patch);
+        assert!(!encoded.contains("Buy groceries"));
+    }
+
+    #[test]
+    fn encode_operation_payload_is_plaintext_passthrough_without_media_key() {
+        let patch = r#"{"title":"Buy groceries"}"#;
+        assert_eq!(encode_operation_payload(None, patch), patch);
+    }
+
+    #[test]
+    fn decode_operation_payload_round_trips_through_encode() -> Result<(), String> {
+        let patch = serde_json::json!({"title": "Buy groceries", "status": "open"});
+        let encoded = encode_operation_payload(Some("test-media-key"), &patch.to_string());
+
+        let decoded = decode_operation_payload(Some("test-media-key"), &encoded)?;
+
+        assert_eq!(decoded, patch);
+        Ok(())
+    }
+
+    #[test]
+    fn decode_operation_payload_falls_back_to_plaintext_for_legacy_data() -> Result<(), String> {
+        let legacy_patch = serde_json::json!({"status": "done"});
+
+        let decoded = decode_operation_payload(Some("test-media-key"), &legacy_patch.to_string())?;
+
+        assert_eq!(decoded, legacy_patch);
+        Ok(())
+    }
+
+    #[test]
+    fn decode_operation_payload_with_wrong_media_key_does_not_leak_plaintext() {
+        let patch = serde_json::json!({"title": "Buy groceries"});
+        let encoded = encode_operation_payload(Some("correct-key"), &patch.to_string());
+
+        // С неправильным ключом это не откатится на "как есть = plaintext",
+        // потому что валидный base64/magic-конверт с чужим ключом это не тот
+        // же случай, что и настоящий legacy plaintext — GCM-тег не совпадёт,
+        // decrypt провалится, а сам base64-текст не распарсится как JSON.
+        let result = decode_operation_payload(Some("wrong-key"), &encoded);
+
+        assert!(result.is_err());
     }
 }

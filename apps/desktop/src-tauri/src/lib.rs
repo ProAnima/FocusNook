@@ -1,19 +1,25 @@
 mod alerts;
+mod android_vault_key;
 mod audio_crypto;
 mod blob_crypto;
+#[cfg(feature = "cloud-providers")]
+mod cloud_sync;
 mod config;
 mod db;
 mod diagnostics;
 mod notes;
+#[cfg(feature = "cloud-providers")]
 mod oauth;
 mod plan_items;
 mod profiles;
 mod reminders;
 mod server_sync;
+#[cfg(feature = "cloud-providers")]
 mod sync;
 mod sync_blobs;
 mod sync_log;
 mod sync_status;
+#[cfg(feature = "cloud-providers")]
 mod sync_tokens;
 mod window_state;
 
@@ -33,6 +39,7 @@ use tauri::{Emitter, Manager, PhysicalPosition};
 use tauri_plugin_autostart::MacosLauncher;
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_reminder_alarm::{CancelRequest, ReminderAlarmExt, ScheduleRequest};
 
 #[cfg(desktop)]
@@ -41,6 +48,14 @@ const DEFAULT_SHORTCUT: &str = "ctrl+shift+v";
 const FALLBACK_SHORTCUT: &str = "ctrl+alt+space";
 const BOUNDS_SETTLE_MS: i64 = 150;
 const WINDOW_STATE_SETTLE_MS: i64 = 300;
+const PRIVACY_POLICY_URL: &str = "https://focus.proanima.net/privacy";
+
+#[tauri::command]
+fn open_privacy_policy(app: tauri::AppHandle) -> Result<(), String> {
+    app.opener()
+        .open_url(PRIVACY_POLICY_URL, None::<&str>)
+        .map_err(|e| e.to_string())
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,17 +140,30 @@ fn is_desktop_platform() -> bool {
 // стороны (для create_profile порядок важен: profiles.json пишется только
 // после того, как install_vault здесь отработал без ошибки).
 fn install_vault(
+    app: &tauri::AppHandle,
     db: &tauri::State<db::Db>,
     hlc_state: &tauri::State<sync_log::HlcClockState>,
     audio_key_state: &tauri::State<AudioKeyState>,
+    data_dir: &std::path::Path,
     path: &std::path::Path,
     keyring_user: &str,
 ) -> Result<(), String> {
-    let new_conn = db::open(path, keyring_user)?;
+    let android_key_hex = android_vault_key::resolve_for_platform(app, data_dir, keyring_user)?;
+    let new_conn = db::open(path, keyring_user, android_key_hex.as_deref())?;
     let new_device_id = sync_log::ensure_device_identity(&new_conn)?;
     let new_clock =
         sync_log::HlcClock::load(&new_conn, new_device_id).map_err(|e| e.to_string())?;
-    let new_audio_key = db::vault_key_for_audio(keyring_user)?;
+    // db::vault_key_for_audio не существует на Android вообще (см. db.rs) —
+    // раздельные #[cfg]-ветки, а не runtime match, иначе Android-сборка не
+    // компилируется: символ должен существовать независимо от того, какая
+    // ветка реально выполнится.
+    #[cfg(target_os = "android")]
+    let new_audio_key = android_key_hex;
+    #[cfg(not(target_os = "android"))]
+    let new_audio_key = match android_key_hex {
+        Some(key) => Some(key),
+        None => db::vault_key_for_audio(keyring_user)?,
+    };
 
     let mut conn_guard = db.0.lock().map_err(|e| e.to_string())?;
     *conn_guard = new_conn;
@@ -151,6 +179,7 @@ fn install_vault(
 }
 
 fn switch_vault(
+    app: &tauri::AppHandle,
     db: &tauri::State<db::Db>,
     hlc_state: &tauri::State<sync_log::HlcClockState>,
     audio_key_state: &tauri::State<AudioKeyState>,
@@ -158,7 +187,16 @@ fn switch_vault(
     id: &str,
 ) -> Result<(), String> {
     let (path, keyring_user) = profiles::vault_location(state, id)?;
-    install_vault(db, hlc_state, audio_key_state, &path, &keyring_user)?;
+    let data_dir = profiles::data_dir(state).to_path_buf();
+    install_vault(
+        app,
+        db,
+        hlc_state,
+        audio_key_state,
+        &data_dir,
+        &path,
+        &keyring_user,
+    )?;
     profiles::set_active(state, id)
 }
 
@@ -176,6 +214,7 @@ fn list_profiles(
 // невозможно переключиться и невозможно удалить.
 #[tauri::command]
 fn create_profile(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     audio_key_state: tauri::State<AudioKeyState>,
@@ -183,10 +222,13 @@ fn create_profile(
     display_name: String,
 ) -> Result<profiles::ProfilesResponse, String> {
     let (pending, vault_path) = profiles::prepare_create(&state, &display_name)?;
+    let data_dir = profiles::data_dir(&state).to_path_buf();
     install_vault(
+        &app,
         &db,
         &hlc_state,
         &audio_key_state,
+        &data_dir,
         &vault_path,
         pending.keyring_user(),
     )?;
@@ -197,13 +239,14 @@ fn create_profile(
 
 #[tauri::command]
 fn switch_active_profile(
+    app: tauri::AppHandle,
     db: tauri::State<db::Db>,
     hlc_state: tauri::State<sync_log::HlcClockState>,
     audio_key_state: tauri::State<AudioKeyState>,
     state: tauri::State<profiles::ProfilesState>,
     id: String,
 ) -> Result<profiles::ProfilesResponse, String> {
-    switch_vault(&db, &hlc_state, &audio_key_state, &state, &id)?;
+    switch_vault(&app, &db, &hlc_state, &audio_key_state, &state, &id)?;
     profiles::list(&state)
 }
 
@@ -581,6 +624,8 @@ fn sync_readiness_status(
 
 fn trigger_server_sync(app: &tauri::AppHandle) {
     server_sync::spawn_best_effort(app.clone());
+    #[cfg(feature = "cloud-providers")]
+    cloud_sync::spawn_best_effort(app.clone());
 }
 
 #[tauri::command]
@@ -968,13 +1013,21 @@ pub fn run() {
         );
     }
 
-    builder
+    builder = builder
         .manage(AppState {
             layer_front: AtomicBool::new(true),
             shortcut_status: Mutex::new(None),
         })
         .manage(alerts::AlertState::default())
-        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    #[cfg(feature = "cloud-providers")]
+    {
+        builder = builder.plugin(tauri_plugin_google_auth::init());
+    }
+
+    builder
+        .plugin(tauri_plugin_secure_storage::init())
         .plugin(tauri_plugin_reminder_alarm::init())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(move |window, event| match event {
@@ -1007,14 +1060,25 @@ pub fn run() {
             let profiles_state = profiles::init(&data_dir)?;
             let active_id = profiles::list(&profiles_state)?.active_profile_id;
             let (vault_path, keyring_user) = profiles::vault_location(&profiles_state, &active_id)?;
-            let conn = db::open(&vault_path, &keyring_user)?;
+            let android_key_hex =
+                android_vault_key::resolve_for_platform(app.handle(), &data_dir, &keyring_user)?;
+            let conn = db::open(&vault_path, &keyring_user, android_key_hex.as_deref())?;
 
             // Раздел 9 ТЗ, Iteration 2: device_id/HLC — per-profile (см.
             // sync_log.rs), поэтому загружаются из того же vault, что и conn,
             // а не заводятся отдельно на уровне приложения.
             let device_id = sync_log::ensure_device_identity(&conn)?;
             let clock = sync_log::HlcClock::load(&conn, device_id)?;
-            let audio_key = db::vault_key_for_audio(&keyring_user)?;
+            // db::vault_key_for_audio не существует на Android вообще (см.
+            // db.rs) — раздельные #[cfg]-ветки, а не runtime match, иначе
+            // Android-сборка не компилируется.
+            #[cfg(target_os = "android")]
+            let audio_key = android_key_hex;
+            #[cfg(not(target_os = "android"))]
+            let audio_key = match android_key_hex {
+                Some(key) => Some(key),
+                None => db::vault_key_for_audio(&keyring_user)?,
+            };
 
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(sync_log::HlcClockState(Mutex::new(clock)));
@@ -1028,6 +1092,11 @@ pub fn run() {
             server_sync::spawn_best_effort(app.handle().clone());
             server_sync::spawn_server_event_listener(app.handle().clone());
             server_sync::spawn_periodic_best_effort(app.handle().clone());
+            #[cfg(feature = "cloud-providers")]
+            {
+                cloud_sync::spawn_best_effort(app.handle().clone());
+                cloud_sync::spawn_periodic_best_effort(app.handle().clone());
+            }
 
             spawn_bounds_watcher(app.handle().clone(), last_moved.clone());
             spawn_window_state_watcher(
@@ -1088,16 +1157,15 @@ pub fn run() {
             acknowledge_reminder,
             snooze_reminder,
             delete_reminder,
-            sync::start_provider_auth,
-            sync::connection_status,
-            sync::disconnect_provider,
             server_sync::server_sync_status,
             server_sync::connect_server_sync,
             server_sync::connect_default_server_sync,
             server_sync::register_server_account,
             server_sync::login_server_account,
+            server_sync::delete_server_account,
             server_sync::disconnect_server_sync,
-            server_sync::sync_server_now
+            server_sync::sync_server_now,
+            open_privacy_policy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

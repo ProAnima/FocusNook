@@ -4,6 +4,7 @@ mod auth;
 mod config;
 mod crypto;
 mod error;
+mod legal;
 mod routes;
 mod state;
 mod sync_events;

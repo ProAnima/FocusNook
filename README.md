@@ -19,28 +19,45 @@
 
 ## Status
 
-FocusNook is in an early **local-first MVP** stage.
+FocusNook is local-first, with a working sync backbone. The first release
+(v1) targets Windows desktop and Android together, syncing exclusively
+through a self-hosted VDS relay server (see [apps/server](apps/server)) — no
+third-party cloud provider ships or is exposed in v1.
 
 The repository is public so the product direction, technical decisions, and
 implementation quality can be reviewed early. The code is not open source and
 is not licensed for commercial use, redistribution, or independent forks.
 
-Current implemented / in-progress focus:
+Implemented today:
 
-- Windows desktop overlay shell with Tauri 2.
-- Transparent frameless window with custom controls.
-- Always-on-top / send-back layer switching.
-- Global shortcut with fallback.
-- Autostart and tray behavior.
-- Per-profile local SQLite vaults on desktop.
-- SQLCipher encryption on desktop with plaintext-vault migration support.
-- Today, Notes, Reminders, Settings, profile switching, and diagnostics UI.
+- Windows desktop overlay shell with Tauri 2: transparent frameless window,
+  always-on-top / send-back layer switching, global shortcut with fallback,
+  autostart and tray behavior.
+- Android companion app built from the same Tauri project: native
+  alarm/notification plugin with boot rescheduling, touch-tuned mobile
+  layout.
+- Per-profile local SQLite vaults, with SQLCipher encryption and
+  plaintext-vault migration support on desktop.
+- Today, Notes, Reminders, Settings, profile switching, and diagnostics UI,
+  shared between desktop and Android.
 - Audio note capture with encrypted desktop audio blobs.
 - Reminder alert window with snooze and acknowledge actions.
-- Android alarm / notification plugin spike with boot rescheduling.
-- OAuth foundation for Google Drive and Yandex Disk sync authentication.
-- Secure per-profile credential foundation for the optional VDS sync server.
-- Local sync readiness status for the active profile operation log.
+- VDS sync server: accounts, device linking, operation-log exchange,
+  encrypted attachment sync, last-write-wins conflict resolution, admin
+  monitoring console.
+- i18n structure covering 10 languages.
+
+Remaining release operations are tracked in
+[docs/v1-release-plan.md](docs/v1-release-plan.md): VDS rollout and restore
+evidence, permanent Android signing identity, physical-device acceptance, and
+store-console submissions. Android SQLite and audio are encrypted at rest with
+an Android Keystore-backed key.
+
+Deferred past v1 — code may exist in the tree, but none of it ships:
+
+- Google Drive and Yandex Disk direct-cloud sync adapters.
+- OpenClaw / OpenClawe AI adapter.
+- iOS.
 
 ## Why FocusNook
 
@@ -80,27 +97,29 @@ nook for the things that must stay close.
 
 ### Android
 
-The Android app is planned as a full companion application:
+The Android app is a real companion built from the same Tauri project as
+desktop (`apps/desktop/src-tauri/gen/android`), not a separate codebase:
 
-- reminders through native alarms and notifications;
-- microphone permission only on explicit voice actions;
-- voice-to-text capture;
-- audio notes;
-- boot-time alarm rescheduling for the active profile;
-- background sync through platform-safe scheduling;
-- shared domain model with the desktop app.
+- reminders through native alarms and notifications, including boot-time
+  rescheduling — shipped;
+- shared domain model and sync engine with the desktop app — shipped;
+- touch-tuned mobile layout — shipped;
+- audio notes use the same recording path as desktop and encrypted-at-rest
+  storage backed by Android Keystore;
+- microphone permission scoped to explicit voice actions, and voice-to-text
+  capture — not started, deferred past v1.
 
 ### Sync
 
-FocusNook is designed as a local-first product with adapter-based sync:
+FocusNook v1 syncs exclusively through a self-hosted VDS relay server (see
+[apps/server](apps/server)): accounts, device linking, an operation-log
+exchange, and encrypted attachment sync.
 
-- Google Drive;
-- Yandex Disk;
-- OpenClaw / OpenClawe adapter;
-- optional ProAnima-hosted VDS sync server.
-
-The app core must not depend on a specific provider. Sync is treated as a port,
-not as the center of the product.
+Sync is still treated as a port internally rather than the center of the
+product, so additional adapters can be added later without touching planner
+logic. Partial adapter code for Google Drive and Yandex Disk already exists in
+the tree, but it is intentionally parked — not wired into the v1 UI, and not
+on the release critical path.
 
 Attachment sync is documented separately in
 [docs/sync-attachments.md](docs/sync-attachments.md): voice recordings are the first supported
@@ -127,14 +146,14 @@ Server layer
   optional VDS sync relay, auth, device registry, encrypted payload storage
 ```
 
-The current repository starts with the desktop spike and will grow toward this
-layout:
+The repository has grown past the initial spike; some of this target layout
+already exists, some is still aspirational:
 
 ```text
 apps/
-  desktop/        Tauri 2 + React + TypeScript desktop app
-  mobile/         planned Android app shell and native plugins
-  server/         planned optional VDS sync relay
+  desktop/        Tauri 2 + React + TypeScript desktop app, including the
+                  Android target (apps/desktop/src-tauri/gen/android) — shipped
+  server/         self-hosted VDS sync relay — shipped, see apps/server
 
 packages/
   ui/             planned shared UI primitives and design tokens
@@ -158,24 +177,31 @@ Desktop stack:
 - Vite.
 - SQLite through Rust.
 
-Planned mobile stack:
+Mobile stack:
 
-- Tauri 2 mobile shell where useful.
-- Native Android/Kotlin plugins for alarms, notifications, microphone,
-  speech-to-text, boot rescheduling, and background sync.
+- Tauri 2 Android target, built from the same `apps/desktop` project —
+  shipped.
+- Native Android/Kotlin plugin for alarms, notifications, and boot
+  rescheduling — shipped.
+- Native microphone / speech-to-text plugins — not started, deferred past
+  v1.
 
 ## Repository Layout
 
 ```text
 .
 ├── apps/
-│   └── desktop/
-│       ├── src/              React application
-│       └── src-tauri/        Tauri/Rust shell
+│   ├── desktop/
+│   │   ├── src/              React application
+│   │   └── src-tauri/        Tauri/Rust shell (Windows + Android targets)
+│   └── server/                VDS sync relay (Rust)
+├── plugins/                    custom Tauri plugins (reminder alarms, ...)
 ├── docs/
-│   └── assets/               README and brand assets
-├── AGENTS.md                 AI-agent engineering contract
-├── LICENSE                   restrictive source-available license
+│   ├── assets/                README and brand assets
+│   ├── sync-attachments.md    attachment sync contract
+│   └── v1-release-plan.md     first-release checklist
+├── AGENTS.md                   AI-agent engineering contract
+├── LICENSE                     restrictive source-available license
 └── README.md
 ```
 
@@ -251,43 +277,42 @@ FocusNook is designed around a few non-negotiables:
 
 ## Roadmap
 
-### Iteration 0: Prototype Spike
+A detailed, working checklist for the first release lives in
+[docs/v1-release-plan.md](docs/v1-release-plan.md). Summary:
 
-- Desktop overlay shell.
-- Layer toggle and global shortcut.
-- Tray and autostart.
-- Local SQLite spike.
-- Minimal three-tab UI.
-- Android alarm and notification spike.
+### Shipped
 
-### Iteration 1: Local-First MVP
+- Desktop overlay shell: transparent window, layer toggle, global shortcut,
+  tray, autostart, multi-monitor window state.
+- Android: native alarm/notification plugin with boot rescheduling,
+  touch-tuned mobile layout.
+- Profiles, Today/Notes/Reminders on local SQLite, reminder alert window,
+  local diagnostics.
+- Operation log with HLC ordering and last-write-wins conflict resolution.
+- VDS sync server: accounts, device linking, operation exchange, encrypted
+  attachment sync, admin monitoring console.
+- i18n structure covering 10 languages.
 
-- Profiles.
-- Today list with real local persistence.
-- Notes.
-- Reminders.
-- Reminder alert window.
-- Local diagnostics.
-- Initial i18n structure.
+### Required for v1 (first release)
 
-### Iteration 2: Sync MVP
+- Create and back up the permanent Android release signing identity.
+- Deploy the prepared VDS migration, nginx routes, privacy policy, and user
+  agreement with approved operator details.
+- VDS production hardening: rotate the bootstrap admin token, verify a real
+  off-box backup restore, and add external uptime monitoring.
+- One recorded end-to-end desktop + Android sync pass against the same VDS
+  server.
+- Signed-candidate acceptance on Huawei/HMS and RuStore devices, real store
+  screenshots, owner declarations, and moderation approval.
 
-- Operation log.
-- Google Drive adapter.
-- Yandex Disk adapter.
-- VDS sync server.
-- Conflict handling.
-- Device linking.
-- Android background sync.
+### Deferred past v1
 
-### Iteration 3: Voice And AI
-
-- Voice capture.
-- Speech-to-text.
-- Universal quick capture.
-- OpenClaw/OpenClawe adapter.
-- AI intent confirmation.
-- Inbox foundation for future summaries.
+- Google Drive and Yandex Disk direct sync adapters — OAuth and journal code
+  exist in the tree but are parked, not wired into the shipped UI.
+- OpenClaw / OpenClawe AI adapter, voice-to-text, universal quick capture,
+  AI intent confirmation.
+- iOS.
+- `planner-core` / `planner-sync` / `planner-storage` crate extraction.
 
 ## Contributing
 

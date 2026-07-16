@@ -2170,6 +2170,20 @@ textarea {
   padding: 6px 9px;
 }
 
+.sync-provider-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sync-provider-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
 .sync-provider-server {
   grid-template-columns: 28px minmax(0, 1fr);
 }
@@ -2192,6 +2206,67 @@ textarea {
   display: grid;
   gap: 7px;
   margin-top: 8px;
+}
+
+.server-account-delete {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.server-account-delete-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.danger-link,
+.privacy-link {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.danger-link,
+.danger-button {
+  color: var(--danger);
+}
+
+.danger-button {
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.server-privacy-consent {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.server-privacy-consent input {
+  margin-top: 2px;
+}
+
+.privacy-link {
+  grid-column: 1 / -1;
 }
 
 .account-sync-summary.is-warning {

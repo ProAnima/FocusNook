@@ -34,8 +34,22 @@ docker compose -p focusnook --env-file /opt/focusnook/.env -f compose.vds-nginx.
 
 In this mode the Rust server is bound only to `127.0.0.1:${FOCUSNOOK_HOST_PORT:-18080}`.
 Put `nginx/focusnook.conf` into `/etc/nginx/sites-available`, enable it, run `nginx -t`,
-then reload nginx. The root web page is protected by nginx Basic Auth; `/v1/*`,
-`/healthz`, and `/readyz` remain API endpoints protected by their own bearer-token rules.
+then reload nginx. The root web page is protected by nginx Basic Auth. `/healthz`,
+`/readyz`, `/privacy`, and `/terms` are public; `/v1/*` keeps its API authentication.
+
+For a controlled update on the existing VDS, run the fail-closed wrapper as root
+(or with equivalent Docker, nginx, and `/opt/focusnook` permissions):
+
+```bash
+cd apps/server
+sh scripts/deploy-vds.sh --apply
+```
+
+It validates configuration, builds the candidate, creates and verifies a database
+dump, records the current image and nginx configuration, applies both layers, and
+runs the public smoke test. On failure it restores both the image and nginx. Run
+`scripts/restore-drill.sh` separately before the window to prove that the selected
+dump restores into a disposable database.
 
 The compose files also run a small Postgres backup container. It writes daily custom-format
 dumps to `${FOCUSNOOK_BACKUP_DIR:-apps/server/backups}` and keeps the last 14 days. Copy this
@@ -90,7 +104,9 @@ curl -sS https://sync.example.com/v1/accounts/register \
     "displayName":"User",
     "deviceId":"desktop-device-id",
     "deviceName":"Windows desktop",
-    "platform":"windows"
+    "platform":"windows",
+    "privacyAccepted":true,
+    "privacyPolicyVersion":"2026-07-16"
   }'
 ```
 
@@ -110,12 +126,17 @@ curl -sS https://sync.example.com/v1/admin/stats \
 
 - `GET /healthz` - process is alive.
 - `GET /readyz` - database is reachable.
+- `GET /privacy` - public privacy policy for the app and store listings.
+- `GET /terms` - public user agreement for the app and store listings.
 - `GET /v1/admin/stats` - operational counters, admin token required.
 - `POST /v1/admin/users` - create a sync user, admin token required.
 - `POST /v1/accounts/register` - create a user account and register the current device.
 - `POST /v1/accounts/login` - sign in and rotate/register the current device token.
+- `DELETE /v1/accounts` - permanently delete the authenticated account and its server data;
+  requires a device token and the current password in `{ "password": "..." }`.
 - `POST /v1/devices` - register or rotate a device token, user token required.
 - `POST /v1/sync/exchange` - push local operations and pull remote operations, device token required.
+- `GET /v1/sync/events` - long-poll for a sync wakeup signal, device token required.
 - `POST /v1/blobs` - upload an encrypted blob, device token required.
 - `GET /v1/blobs/:profileId/:blobId` - download an encrypted blob, device token required.
 
@@ -131,6 +152,13 @@ its device token, it can rebuild from the relay. Clients must apply operations i
 Domain conflict handling remains a client concern. The server is a durable relay, not the
 source of truth for planner state. Server-level conflicts are reserved for broken sync
 invariants, for example reusing the same `operationId` or `blobId` with different content.
+
+`GET /v1/sync/events` lets a client avoid polling `/v1/sync/exchange` on a fixed timer. It
+long-polls (`timeoutMs` query param, default `25000`, clamped to `1000`-`30000`) and returns
+as soon as another device's exchange call touches the same account:
+`{"changed": true, "reason": "...", "sequence": N}`, or `{"changed": false, "reason": null,
+"sequence": 0}` on timeout. It is a wakeup signal only - the client still calls
+`/v1/sync/exchange` to fetch the actual operations.
 
 ## Restore
 

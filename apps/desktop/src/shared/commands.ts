@@ -92,6 +92,13 @@ export interface ConnectionStatus {
   connected: boolean;
 }
 
+export interface CloudSyncStatus {
+  connected: boolean;
+  lastOperationHlc: string | null;
+  message: string | null;
+  provider: SyncProvider;
+}
+
 export interface ServerSyncStatus {
   available: boolean;
   accountEmail: string | null;
@@ -348,6 +355,9 @@ export const commands = {
     async disconnect(provider: SyncProvider) {
       await invoke("disconnect_provider", { provider });
     },
+    async syncNow(provider: SyncProvider): Promise<CloudSyncStatus> {
+      return invoke<CloudSyncStatus>("sync_cloud_now", { provider });
+    },
   },
   serverSync: {
     onCompleted(handler: () => void) {
@@ -365,8 +375,10 @@ export const commands = {
     async connectDefault(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_default_server_sync");
     },
-    async register(email: string, password: string, displayName: string): Promise<ServerSyncStatus> {
-      return invoke<ServerSyncStatus>("register_server_account", { email, password, displayName });
+    async register(email: string, password: string, displayName: string, privacyAccepted: boolean): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("register_server_account", {
+        request: { email, password, displayName, privacyAccepted },
+      });
     },
     async login(email: string, password: string): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("login_server_account", { email, password });
@@ -376,6 +388,14 @@ export const commands = {
     },
     async disconnect() {
       await invoke("disconnect_server_sync");
+    },
+    async deleteAccount(password: string) {
+      await invoke("delete_server_account", { password });
+    },
+  },
+  legal: {
+    async openPrivacy() {
+      await invoke("open_privacy_policy");
     },
   },
 };

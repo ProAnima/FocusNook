@@ -15,6 +15,13 @@ license-file = "../../../LICENSE"
 name = "desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Store builds are VDS-only by default. Direct cloud providers are opt-in so
+# RuStore/AppGallery artifacts do not contain Google Play Services merely
+# because the parked post-v1 adapter remains in the source tree.
+default = []
+cloud-providers = ["dep:tauri-plugin-google-auth"]
+
 [lints.clippy]
 # Прод-уровень из AGENTS.md: Result + осмысленная обработка ошибок вместо паники.
 # Единственное разрешённое исключение — bootstrap в lib.rs::run(), помечен явным #[allow].
@@ -23,6 +30,11 @@ expect_used = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+
+[profile.dev]
+# Android debug APKs are installable, but raw Rust debuginfo made the phone
+# artifact hundreds of MB. Keep debug signing while stripping symbol payload.
+strip = "debuginfo"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -61,22 +73,20 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # веб-фреймворк (тот же механизм переиспользуется как мок-сервер в тестах).
 tiny_http = "0.12"
 tauri-plugin-opener = "2"
+tauri-plugin-secure-storage = { path = "../../../plugins/tauri-plugin-secure-storage" }
 # tokio уже резолвится транзитивно через сам Tauri (cargo tree -i tokio
 # подтверждает) — не новый вес в сборке, но Rust требует явного объявления
 # в Cargo.toml, чтобы называть crate напрямую в коде (spawn_blocking для
 # блокирующего tiny_http::Server::recv, см. oauth.rs).
 tokio = { version = "1", features = ["rt", "macros"] }
 
-# Раздел 26 ТЗ, спайк №2 — обновление: bundled-sqlcipher-vendored-openssl не
-# кросс-компилируется под Android с Windows-хоста (OpenSSL Configure требует
-# Perl с Unix-путями; Strawberry Perl нативно-Windows и отклоняется самим
-# Configure, а Perl из Git Bash проходит эту проверку, но не имеет модуля
-# Locale::Maketext::Simple). Пока это открытый технический риск — раздел 26.
-# До его решения Android-сборка идёт без at-rest шифрования БД (обычный
-# bundled SQLite); эквивалент Windows Credential Manager для Android
-# (Keystore/EncryptedSharedPreferences) тоже ещё не реализован.
+# SQLCipher is used on both desktop and Android. The Windows-hosted Android
+# build needs the Git Perl/Bash + NDK environment prepared by
+# scripts/android-build-windows.ps1; the vault key is wrapped by the native
+# secure-storage plugin and Android Keystore.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+tauri-plugin-google-auth = { path = "../../../plugins/tauri-plugin-google-auth", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }

@@ -7,6 +7,8 @@ use oauth2::{
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "android")]
+use tauri_plugin_google_auth::{GoogleAuthExt, TokenRequest};
 use tauri_plugin_opener::OpenerExt;
 
 // Раздел 14 ТЗ, sync — только два провайдера ожидаются за весь MVP (плюс,
@@ -40,7 +42,7 @@ impl ProviderId {
     }
 
     // appDataFolder / app_folder — песочница провайдера, не весь диск.
-    fn scope(self) -> &'static str {
+    pub(crate) fn scope(self) -> &'static str {
         match self {
             ProviderId::GoogleDrive => "https://www.googleapis.com/auth/drive.appdata",
             ProviderId::YandexDisk => "cloud_api:disk.app_folder",
@@ -140,6 +142,20 @@ pub async fn run_flow(
     creds: &ProviderCredentials,
     profile_id: &str,
 ) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    if provider == ProviderId::GoogleDrive {
+        let token = app
+            .google_auth()
+            .connect(TokenRequest {
+                scope: provider.scope().to_string(),
+            })
+            .map_err(|e| e.to_string())?;
+        if token.access_token.is_empty() {
+            return Err("Google account connected but no access token was returned".to_string());
+        }
+        return Ok(());
+    }
+
     let server = tiny_http::Server::http("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = server
         .server_addr()
@@ -232,10 +248,25 @@ async fn refresh_access_token(
 // sync_log.rs::Hlc::parse).
 #[allow(dead_code)]
 pub async fn ensure_valid_token(
+    _app: &tauri::AppHandle,
     provider: ProviderId,
     profile_id: &str,
     creds: &ProviderCredentials,
 ) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    if provider == ProviderId::GoogleDrive {
+        let token = _app
+            .google_auth()
+            .access_token(TokenRequest {
+                scope: provider.scope().to_string(),
+            })
+            .map_err(|e| e.to_string())?;
+        if token.access_token.is_empty() {
+            return Err("Google account did not return an access token".to_string());
+        }
+        return Ok(token.access_token);
+    }
+
     let Some(refresh_token) = sync_tokens::load_refresh_token(profile_id, provider)? else {
         return Err("провайдер не подключён".to_string());
     };
