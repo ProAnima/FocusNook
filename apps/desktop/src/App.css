@@ -1048,8 +1048,16 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-tertiary);
   cursor: grab;
+}
+
+.note-drag-handle:hover,
+.note-drag-handle:focus-visible {
+  color: var(--text-primary);
 }
 
 .note-drag-handle:active {
@@ -3013,7 +3021,7 @@ textarea {
   height: 100dvh;
   max-width: none;
   max-height: none;
-  overflow: hidden;
+  overflow: clip;
   background: var(--surface-gradient);
   --mobile-side-padding: clamp(14px, 4.2vw, 20px);
 }
@@ -3041,6 +3049,7 @@ textarea {
 }
 
 .mobile-shell .body {
+  z-index: 3;
   overflow: hidden;
   padding: 18px var(--mobile-side-padding) 14px;
 }
@@ -3193,7 +3202,7 @@ textarea {
 
 .mobile-shell .note-item {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 64px;
   padding: 12px 12px;
@@ -3203,11 +3212,6 @@ textarea {
 .mobile-shell .note-item.is-audio {
   align-items: center;
   min-height: 78px;
-}
-
-.mobile-shell .note-drag-handle {
-  width: 28px;
-  min-height: 40px;
 }
 
 .mobile-shell .note-content {
@@ -3226,8 +3230,8 @@ textarea {
 }
 
 .mobile-shell .note-item-actions .icon-button {
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
   border-radius: 12px;
 }
 

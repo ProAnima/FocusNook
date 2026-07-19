@@ -146,7 +146,7 @@ describe("NotesView", () => {
     moveToGroup.mockResolvedValue(note({ id: "n1", body: "Перетащи меня", groupId: "g1" }));
     render(<NotesView />);
 
-    const row = await screen.findByText("Перетащи меня");
+    await screen.findByText("Перетащи меня");
     await openFolders();
     const folder = await screen.findByTitle("Архив");
     const dataTransfer = {
@@ -160,7 +160,7 @@ describe("NotesView", () => {
       },
     };
 
-    fireEvent.dragStart(row.closest(".note-item")!, { dataTransfer });
+    fireEvent.dragStart(screen.getByTitle("Перетащить в папку"), { dataTransfer });
     fireEvent.drop(folder.closest("button")!, { dataTransfer });
 
     await waitFor(() => expect(moveToGroup).toHaveBeenCalledWith("n1", "g1"));
@@ -209,6 +209,25 @@ describe("NotesView", () => {
 
     expect(deleteNote).toHaveBeenCalledWith("1");
     expect(screen.queryByText("Удали меня")).not.toBeInTheDocument();
+  });
+
+  it("disables note dragging on mobile so a delete hold stays on the button", async () => {
+    list.mockResolvedValue([note({ body: "Мобильная заметка" })]);
+    deleteNote.mockResolvedValue(undefined);
+    render(<NotesView isDesktop={false} />);
+
+    const body = await screen.findByText("Мобильная заметка");
+    expect(body.closest(".note-item")).not.toHaveAttribute("draggable");
+    expect(screen.queryByTitle("Перетащить в папку")).not.toBeInTheDocument();
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByTitle("Удалить"), { button: 0, pointerId: 1 });
+    await act(async () => {
+      vi.advanceTimersByTime(950);
+    });
+    vi.useRealTimers();
+
+    expect(deleteNote).toHaveBeenCalledWith("1");
   });
 
   it("renders an audio player for audio notes", async () => {

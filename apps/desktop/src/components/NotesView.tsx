@@ -228,12 +228,14 @@ function FolderMoveMenu({
 
 function NoteRow({
   groups,
+  isDesktop,
   note,
   onDelete,
   onMove,
   onUpdate,
 }: {
   groups: NoteGroup[];
+  isDesktop: boolean;
   note: Note;
   onDelete: (id: string) => void;
   onMove: (id: string, groupId: string | null) => void;
@@ -241,15 +243,10 @@ function NoteRow({
 }) {
   const [editing, setEditing] = useState(false);
   const { t } = useLocale();
-  const draggable = !editing;
+  const draggable = isDesktop && !editing;
   const deleteHold = useHoldToConfirm(() => onDelete(note.id));
   function startDrag(event: DragEvent<HTMLElement>) {
     if (!draggable) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button, input, textarea, audio")) {
-      event.preventDefault();
-      return;
-    }
     event.dataTransfer.setData(NOTE_DRAG_TYPE, note.id);
     event.dataTransfer.setData("text/plain", note.id);
     event.dataTransfer.effectAllowed = "move";
@@ -258,16 +255,20 @@ function NoteRow({
   return (
     <li
       className={`note-item ${note.kind === "audio" ? "is-audio" : ""} ${editing ? "is-editing" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}
-      draggable={draggable}
-      onDragStart={startDrag}
     >
-      <div
-        className="note-drag-handle"
-        title={t("notes.dragHint")}
-        aria-label={t("notes.dragHint")}
-      >
-        <GripVertical size={13} />
-      </div>
+      {isDesktop && (
+        <button
+          className="note-drag-handle"
+          type="button"
+          draggable={draggable}
+          disabled={!draggable}
+          onDragStart={startDrag}
+          title={t("notes.dragHint")}
+          aria-label={t("notes.dragHint")}
+        >
+          <GripVertical size={13} />
+        </button>
+      )}
       <div className="note-content">
         {note.kind === "audio" ? (
           <AudioNotePlayer noteId={note.id} />
@@ -722,6 +723,7 @@ export function NotesView({ isDesktop = true }: { isDesktop?: boolean }) {
             <NoteRow
               key={note.id}
               groups={groups}
+              isDesktop={isDesktop}
               note={note}
               onDelete={deleteNote}
               onMove={(id, groupId) => void moveNoteToGroup(id, groupId)}
