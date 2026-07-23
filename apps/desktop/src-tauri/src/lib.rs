@@ -50,6 +50,8 @@ const BOUNDS_SETTLE_MS: i64 = 150;
 const WINDOW_STATE_SETTLE_MS: i64 = 300;
 #[cfg(desktop)]
 const INITIAL_DPI_SETTLE_MS: u64 = 200;
+#[cfg(desktop)]
+const DESKTOP_WEBVIEW_ZOOM: f64 = 1.0;
 const PRIVACY_POLICY_URL: &str = "https://focus.proanima.net/privacy";
 
 #[tauri::command]
@@ -914,6 +916,10 @@ fn spawn_initial_window_state_reapply(app: tauri::AppHandle, data_dir: PathBuf) 
         let app_for_main = app.clone();
         let _ = app.run_on_main_thread(move || {
             if let Some(window) = app_for_main.get_webview_window("main") {
+                // WebView2 keeps page zoom in its user-data profile, which
+                // survives an app reinstall. Normalize it after initialization
+                // so one machine cannot retain an enlarged, unclickable UI.
+                let _ = window.set_zoom(DESKTOP_WEBVIEW_ZOOM);
                 let scale_factor = window.scale_factor().unwrap_or(1.0);
                 window_state::reapply_size_after_scale_change(&window, &data_dir, scale_factor);
             }
@@ -1066,6 +1072,8 @@ pub fn run() {
                     window.app_handle().path().app_data_dir(),
                     window.app_handle().get_webview_window(window.label()),
                 ) {
+                    #[cfg(desktop)]
+                    let _ = webview_window.set_zoom(DESKTOP_WEBVIEW_ZOOM);
                     window_state::reapply_size_after_scale_change(
                         &webview_window,
                         &data_dir,
@@ -1086,6 +1094,10 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             window_state::apply(app.handle(), &data_dir);
+            #[cfg(desktop)]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_zoom(DESKTOP_WEBVIEW_ZOOM);
+            }
             #[cfg(desktop)]
             spawn_initial_window_state_reapply(app.handle().clone(), data_dir.clone());
             if let Some(window) = app.get_webview_window("main") {
