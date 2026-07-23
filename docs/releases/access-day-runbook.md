@@ -36,8 +36,9 @@ Do not rebuild after recording the hash; any rebuild creates a new candidate.
 1. From the operator computer, run `apps/server/scripts/backup-vds-local.py`,
    verify its local manifest, and record the printed SHA-256. Confirm the current
    service is healthy. Do not retain the dump on the VDS.
-2. Add the approved `FOCUSNOOK_LEGAL_*` and `FOCUSNOOK_SUPPORT_EMAIL` values to
-   `/opt/focusnook/.env`; confirm no `change-me`/`replace-with` values remain.
+2. Add the approved `FOCUSNOOK_LEGAL_NAME` and `FOCUSNOOK_SUPPORT_EMAIL` values
+   to `/opt/focusnook/.env`; tax id and address are optional until needed for
+   store publication. Confirm no `change-me`/`replace-with` values remain.
 3. In the checked-out `apps/server` directory run:
 
    ```sh

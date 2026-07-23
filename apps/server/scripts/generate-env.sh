@@ -29,12 +29,13 @@ legal_tax_id="${FOCUSNOOK_LEGAL_TAX_ID:-}"
 legal_address="${FOCUSNOOK_LEGAL_ADDRESS:-}"
 support_email="${FOCUSNOOK_SUPPORT_EMAIL:-}"
 
-legal_count=0
-for value in "$legal_name" "$legal_tax_id" "$legal_address" "$support_email"; do
-  if [ -n "$value" ]; then legal_count=$((legal_count + 1)); fi
-done
-if [ "$legal_count" -ne 0 ] && [ "$legal_count" -ne 4 ]; then
-  echo "legal identity must be fully configured or fully omitted" >&2
+if { [ -n "$legal_name" ] && [ -z "$support_email" ]; } ||
+  { [ -z "$legal_name" ] && [ -n "$support_email" ]; }; then
+  echo "public registration requires operator name and support email" >&2
+  exit 1
+fi
+if [ -z "$legal_name" ] && { [ -n "$legal_tax_id" ] || [ -n "$legal_address" ]; }; then
+  echo "tax id and address require public registration to be enabled" >&2
   exit 1
 fi
 

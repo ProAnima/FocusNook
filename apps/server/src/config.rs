@@ -61,15 +61,15 @@ fn legal_identity_from_values(values: [Option<String>; 4]) -> AppResult<Option<L
     {
         return Ok(None);
     }
-    match (address, name, support_email, tax_id) {
-        (Some(address), Some(name), Some(support_email), Some(tax_id)) => Ok(Some(LegalIdentity {
+    match (name, support_email) {
+        (Some(name), Some(support_email)) => Ok(Some(LegalIdentity {
             address,
             name,
             support_email,
             tax_id,
         })),
         _ => Err(AppError::Config(
-            "legal identity must be either fully configured or fully omitted".to_string(),
+            "public registration requires operator name and support email".to_string(),
         )),
     }
 }
@@ -113,7 +113,18 @@ mod tests {
     }
 
     #[test]
-    fn legal_identity_rejects_partial_configuration() {
+    fn legal_identity_accepts_contact_only_configuration() {
+        let result = legal_identity_from_values([
+            None,
+            Some("ProAnimaStudio".into()),
+            Some("info@proanima.net".into()),
+            None,
+        ]);
+        assert!(matches!(result, Ok(Some(_))));
+    }
+
+    #[test]
+    fn legal_identity_rejects_missing_operator_contact() {
         let result = legal_identity_from_values([Some("address".into()), None, None, None]);
         assert!(matches!(result, Err(AppError::Config(_))));
     }

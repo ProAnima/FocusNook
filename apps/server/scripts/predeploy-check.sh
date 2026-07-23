@@ -20,11 +20,9 @@ for name in $required_names; do
   esac
 done
 
-legal_count=0
-for name in FOCUSNOOK_LEGAL_NAME FOCUSNOOK_LEGAL_TAX_ID FOCUSNOOK_LEGAL_ADDRESS FOCUSNOOK_SUPPORT_EMAIL; do
+for name in FOCUSNOOK_LEGAL_NAME FOCUSNOOK_SUPPORT_EMAIL FOCUSNOOK_LEGAL_TAX_ID FOCUSNOOK_LEGAL_ADDRESS; do
   value="$(sed -n "s/^${name}=//p" "$env_file" | tail -n 1)"
   if [ -n "$value" ]; then
-    legal_count=$((legal_count + 1))
     case "$value" in
       change-me*|replace-with*)
         echo "placeholder value is forbidden for ${name}" >&2
@@ -33,8 +31,20 @@ for name in FOCUSNOOK_LEGAL_NAME FOCUSNOOK_LEGAL_TAX_ID FOCUSNOOK_LEGAL_ADDRESS 
     esac
   fi
 done
-test "$legal_count" -eq 0 || test "$legal_count" -eq 4 || {
-  echo "legal identity must be fully configured or fully omitted" >&2
+operator_name="$(sed -n 's/^FOCUSNOOK_LEGAL_NAME=//p' "$env_file" | tail -n 1)"
+support_email="$(sed -n 's/^FOCUSNOOK_SUPPORT_EMAIL=//p' "$env_file" | tail -n 1)"
+tax_id="$(sed -n 's/^FOCUSNOOK_LEGAL_TAX_ID=//p' "$env_file" | tail -n 1)"
+legal_address="$(sed -n 's/^FOCUSNOOK_LEGAL_ADDRESS=//p' "$env_file" | tail -n 1)"
+test -z "$operator_name" && test -z "$support_email" || {
+  test -n "$operator_name" && test -n "$support_email"
+} || {
+  echo "public registration requires FOCUSNOOK_LEGAL_NAME and FOCUSNOOK_SUPPORT_EMAIL" >&2
+  exit 1
+}
+test -n "$operator_name" || {
+  test -z "$tax_id" && test -z "$legal_address"
+} || {
+  echo "tax id and address require public registration to be enabled" >&2
   exit 1
 }
 

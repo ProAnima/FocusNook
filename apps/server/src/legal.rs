@@ -2,13 +2,24 @@ pub const PRIVACY_POLICY_VERSION: &str = "2026-07-16";
 
 #[derive(Clone)]
 pub struct LegalIdentity {
-    pub address: String,
+    pub address: Option<String>,
     pub name: String,
     pub support_email: String,
-    pub tax_id: String,
+    pub tax_id: Option<String>,
 }
 
 impl LegalIdentity {
+    fn operator_description(&self) -> String {
+        let mut description = escape(&self.name);
+        if let Some(tax_id) = &self.tax_id {
+            description.push_str(&format!(", ИНН {}", escape(tax_id)));
+        }
+        if let Some(address) = &self.address {
+            description.push_str(&format!(", адрес: {}", escape(address)));
+        }
+        description
+    }
+
     pub fn privacy_html(&self) -> String {
         page(
             "Политика конфиденциальности FocusNook",
@@ -17,7 +28,7 @@ impl LegalIdentity {
 <h1>Политика конфиденциальности FocusNook</h1>
 <p>Версия от 16 июля 2026 года.</p>
 <h2>1. Оператор</h2>
-<p>{name}, ИНН {tax_id}, адрес: {address}. По вопросам о персональных данных: <a href="mailto:{email}">{email}</a>.</p>
+<p>{operator}. По вопросам о персональных данных: <a href="mailto:{email}">{email}</a>.</p>
 <h2>2. Какие данные обрабатываются</h2>
 <ul>
   <li>имя и адрес электронной почты при создании аккаунта;</li>
@@ -38,9 +49,7 @@ impl LegalIdentity {
 <p>При существенном изменении политики приложение запросит согласие с новой версией до операции, для которой оно необходимо.</p>
 <p><a href="/terms">Пользовательское соглашение</a></p>
 "#,
-                name = escape(&self.name),
-                tax_id = escape(&self.tax_id),
-                address = escape(&self.address),
+                operator = self.operator_description(),
                 email = escape(&self.support_email),
             ),
         )
@@ -54,7 +63,7 @@ impl LegalIdentity {
 <h1>Пользовательское соглашение FocusNook</h1>
 <p>Редакция от 16 июля 2026 года.</p>
 <h2>1. Стороны и принятие условий</h2>
-<p>Правообладатель и оператор сервиса — {name}, ИНН {tax_id}, адрес: {address}. Устанавливая приложение, создавая аккаунт или используя синхронизацию, пользователь принимает это соглашение.</p>
+<p>Правообладатель и оператор сервиса — {operator}. Устанавливая приложение, создавая аккаунт или используя синхронизацию, пользователь принимает это соглашение.</p>
 <h2>2. Сервис</h2>
 <p>FocusNook предоставляет локальные планы, заметки, голосовые записи и напоминания, а также необязательную синхронизацию между устройствами. Базовая версия распространяется бесплатно, если в карточке магазина прямо не указано иное.</p>
 <h2>3. Аккаунт и безопасность</h2>
@@ -68,9 +77,7 @@ impl LegalIdentity {
 <h2>7. Изменения и контакты</h2>
 <p>Новая редакция публикуется на этой странице. Существенные изменения применяются после уведомления или повторного согласия, когда оно требуется. Вопросы и претензии: <a href="mailto:{email}">{email}</a>.</p>
 "#,
-                name = escape(&self.name),
-                tax_id = escape(&self.tax_id),
-                address = escape(&self.address),
+                operator = self.operator_description(),
                 email = escape(&self.support_email),
             ),
         )
@@ -100,13 +107,28 @@ mod tests {
     #[test]
     fn legal_identity_is_html_escaped() {
         let identity = LegalIdentity {
-            address: "<script>alert(1)</script>".to_string(),
+            address: Some("<script>alert(1)</script>".to_string()),
             name: "A & B".to_string(),
             support_email: "support@example.com".to_string(),
-            tax_id: "123".to_string(),
+            tax_id: Some("123".to_string()),
         };
         let html = identity.privacy_html();
         assert!(html.contains("A &amp; B"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn legal_pages_render_without_tax_id_or_address() {
+        let identity = LegalIdentity {
+            address: None,
+            name: "ProAnimaStudio".to_string(),
+            support_email: "info@proanima.net".to_string(),
+            tax_id: None,
+        };
+        let html = identity.privacy_html();
+        assert!(html.contains("ProAnimaStudio."));
+        assert!(html.contains("info@proanima.net"));
+        assert!(!html.contains("ИНН"));
+        assert!(!html.contains("адрес:"));
     }
 }
