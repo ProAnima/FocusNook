@@ -48,6 +48,8 @@ const DEFAULT_SHORTCUT: &str = "ctrl+shift+v";
 const FALLBACK_SHORTCUT: &str = "ctrl+alt+space";
 const BOUNDS_SETTLE_MS: i64 = 150;
 const WINDOW_STATE_SETTLE_MS: i64 = 300;
+#[cfg(desktop)]
+const INITIAL_DPI_SETTLE_MS: u64 = 200;
 const PRIVACY_POLICY_URL: &str = "https://focus.proanima.net/privacy";
 
 #[tauri::command]
@@ -905,6 +907,20 @@ fn spawn_window_state_watcher(
     });
 }
 
+#[cfg(desktop)]
+fn spawn_initial_window_state_reapply(app: tauri::AppHandle, data_dir: PathBuf) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(INITIAL_DPI_SETTLE_MS));
+        let app_for_main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Some(window) = app_for_main.get_webview_window("main") {
+                let scale_factor = window.scale_factor().unwrap_or(1.0);
+                window_state::reapply_size_after_scale_change(&window, &data_dir, scale_factor);
+            }
+        });
+    });
+}
+
 // Пробуем основной хоткей, при конфликте — запасной (раздел 10 ТЗ, риск конфликта с paste-without-formatting).
 #[cfg(desktop)]
 fn register_layer_shortcut(app: &tauri::AppHandle) -> Result<&'static str, String> {
@@ -1040,6 +1056,23 @@ pub fn run() {
             tauri::WindowEvent::Resized(_) if window.label() == "main" => {
                 last_window_state_change_for_event.store(now_millis(), Ordering::SeqCst);
             }
+            tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. }
+                if window.label() == "main" =>
+            {
+                // Windows can retain the old physical size when a frameless
+                // window crosses onto a monitor with another DPI. Restore the
+                // persisted logical size before the transient size is saved.
+                if let (Ok(data_dir), Some(webview_window)) = (
+                    window.app_handle().path().app_data_dir(),
+                    window.app_handle().get_webview_window(window.label()),
+                ) {
+                    window_state::reapply_size_after_scale_change(
+                        &webview_window,
+                        &data_dir,
+                        *scale_factor,
+                    );
+                }
+            }
             // Только главное окно прячется в tray при закрытии — иначе
             // alert-окно "закрывалось" бы, просто скрываясь, и блокировало
             // показ следующего напоминания из очереди (см. alerts.rs).
@@ -1053,6 +1086,8 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             window_state::apply(app.handle(), &data_dir);
+            #[cfg(desktop)]
+            spawn_initial_window_state_reapply(app.handle().clone(), data_dir.clone());
             if let Some(window) = app.get_webview_window("main") {
                 clamp_to_monitor(&window);
             }

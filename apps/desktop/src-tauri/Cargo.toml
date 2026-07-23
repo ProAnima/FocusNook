@@ -1,6 +1,6 @@
 [package]
 name = "focusnook-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "FocusNook desktop overlay app."
 authors = ["ProAnima Studio"]
 edition = "2021"

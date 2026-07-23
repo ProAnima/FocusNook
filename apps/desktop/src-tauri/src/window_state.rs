@@ -32,6 +32,14 @@ fn clamp_size(width: u32, height: u32) -> (u32, u32) {
     )
 }
 
+fn usable_scale_factor(scale_factor: f64) -> f64 {
+    if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    }
+}
+
 fn restored_size(state: &MainWindowState, scale_factor: f64) -> (u32, u32) {
     if state.version >= LOGICAL_SIZE_STATE_VERSION {
         return clamp_size(state.width, state.height);
@@ -40,11 +48,7 @@ fn restored_size(state: &MainWindowState, scale_factor: f64) -> (u32, u32) {
     // v1 stored outer_size() verbatim, which is physical pixels. Reinterpret it
     // once using the current monitor scale so a 648 px window does not become
     // only 432 CSS px at 150% Windows scaling.
-    let scale = if scale_factor.is_finite() && scale_factor > 0.0 {
-        scale_factor
-    } else {
-        1.0
-    };
+    let scale = usable_scale_factor(scale_factor);
     let width = (f64::from(state.width) / scale).round() as u32;
     let height = (f64::from(state.height) / scale).round() as u32;
     clamp_size(width, height)
@@ -53,6 +57,15 @@ fn restored_size(state: &MainWindowState, scale_factor: f64) -> (u32, u32) {
 fn load_state(data_dir: &Path) -> Option<MainWindowState> {
     let raw = fs::read_to_string(state_path(data_dir)).ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+fn apply_size(window: &tauri::WebviewWindow, state: &MainWindowState, scale_factor: f64) {
+    let (width, height) = restored_size(state, scale_factor);
+    // During a cross-monitor move the window dispatcher can briefly retain
+    // the previous monitor's scale. Convert with the event's new scale here.
+    let physical_size =
+        LogicalSize::new(width, height).to_physical::<u32>(usable_scale_factor(scale_factor));
+    let _ = window.set_size(physical_size);
 }
 
 fn write_state(data_dir: &Path, state: &MainWindowState) -> Result<(), String> {
@@ -76,12 +89,24 @@ pub fn apply(app: &tauri::AppHandle, data_dir: &Path) {
         return;
     };
 
-    let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let (width, height) = restored_size(&state, scale_factor);
-    let _ = window.set_size(LogicalSize::new(f64::from(width), f64::from(height)));
+    // Move first so Windows can switch the window to the target monitor's DPI
+    // before the logical size is restored.
     if let (Some(x), Some(y)) = (state.x, state.y) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    apply_size(&window, &state, scale_factor);
+}
+
+pub fn reapply_size_after_scale_change(
+    window: &tauri::WebviewWindow,
+    data_dir: &Path,
+    scale_factor: f64,
+) {
+    let Some(state) = load_state(data_dir) else {
+        return;
+    };
+    apply_size(window, &state, scale_factor);
 }
 
 pub fn save(window: &tauri::WebviewWindow, data_dir: &Path) -> Result<(), String> {
