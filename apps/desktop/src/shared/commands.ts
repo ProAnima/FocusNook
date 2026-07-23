@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { physicalCursorToClient } from "./cursorCoordinates";
 
 async function safeListen<T>(eventName: string, handler: (event: { payload: T }) => void): Promise<() => void> {
   try {
@@ -177,15 +178,13 @@ export const commands = {
     },
     async getCursorClientPosition(): Promise<CursorClientPosition> {
       const win = getCurrentWindow();
-      const [cursor, position, scaleFactor] = await Promise.all([
+      const [cursor, position] = await Promise.all([
         cursorPosition(),
         win.outerPosition(),
-        win.scaleFactor(),
       ]);
-      return {
-        x: (cursor.x - position.x) / scaleFactor,
-        y: (cursor.y - position.y) / scaleFactor,
-      };
+      // devicePixelRatio follows both per-monitor DPI and WebView zoom, while
+      // Tauri's scaleFactor only represents the operating-system DPI.
+      return physicalCursorToClient(cursor, position, window.devicePixelRatio);
     },
     async setIgnoreCursorEvents(ignore: boolean): Promise<void> {
       await getCurrentWindow().setIgnoreCursorEvents(ignore);
