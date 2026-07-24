@@ -34,9 +34,12 @@ textarea {
 }
 
 :root {
-  --desktop-external-left: 120px;
   --desktop-shadow-gutter: 14px;
   --desktop-shell-width: 380px;
+  --desktop-inline-gutter: max(
+    var(--desktop-shadow-gutter),
+    calc(50vw - 190px)
+  );
   --folder-rail-offset: 60px;
 }
 
@@ -46,9 +49,9 @@ textarea {
   height: 100%;
   padding:
     var(--desktop-shadow-gutter)
-    calc(var(--desktop-external-left) + var(--desktop-shadow-gutter))
+    var(--desktop-inline-gutter)
     var(--desktop-shadow-gutter)
-    calc(var(--desktop-external-left) + var(--desktop-shadow-gutter));
+    var(--desktop-inline-gutter);
   display: flex;
   justify-content: center;
   overflow: hidden;
@@ -63,9 +66,9 @@ textarea {
 .desktop-stage[data-folder-rail-side="right"] {
   padding:
     var(--desktop-shadow-gutter)
-    calc(var(--desktop-external-left) + var(--desktop-shadow-gutter))
+    var(--desktop-inline-gutter)
     var(--desktop-shadow-gutter)
-    calc(var(--desktop-external-left) + var(--desktop-shadow-gutter));
+    var(--desktop-inline-gutter);
 }
 
 /* Окно остаётся transparent на уровне Tauri только ради чистых скруглённых
@@ -368,6 +371,7 @@ textarea {
   position: relative;
   z-index: 2;
   display: flex;
+  min-width: 0;
   gap: 4px;
   padding: 10px 14px 0;
 }
@@ -375,6 +379,7 @@ textarea {
 .tab {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 6px;
   font-size: 12px;
   padding: 6px 10px;
@@ -384,6 +389,13 @@ textarea {
   color: var(--text-secondary);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab:hover {
