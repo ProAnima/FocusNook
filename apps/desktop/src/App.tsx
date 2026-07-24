@@ -119,8 +119,8 @@ function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide 
             />
           )}
         </main>
+        <WindowResizeHandles />
       </div>
-      <WindowResizeHandles />
     </div>
   );
 }

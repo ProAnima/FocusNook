@@ -1,4 +1,3 @@
-import { Grip } from "lucide-react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { commands, type ResizeDirection } from "../shared/commands";
 import { useLocale } from "../shared/useLocale";
@@ -54,7 +53,7 @@ export function WindowResizeHandles() {
         onKeyDown={keyboardResize}
         onPointerDown={(event) => startResize("SouthEast", event)}
       >
-        <Grip size={14} />
+        <span aria-hidden="true" />
       </button>
     </>
   );

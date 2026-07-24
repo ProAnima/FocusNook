@@ -437,109 +437,53 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
           </form>
         </div>
       </main>
-    </div>
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-north"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-northeast"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-east"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-south"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-southwest"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-west"
-      data-cursor-hit-area="true"
-    />
-    <div
-      aria-hidden="true"
-      class="window-resize-edge resize-northwest"
-      data-cursor-hit-area="true"
-    />
-    <button
-      aria-label="Изменить размер окна"
-      class="window-resize-grip"
-      data-cursor-hit-area="true"
-      title="Изменить размер окна"
-      type="button"
-    >
-      <svg
+      <div
         aria-hidden="true"
-        class="lucide lucide-grip"
-        fill="none"
-        height="14"
-        stroke="currentColor"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="14"
-        xmlns="http://www.w3.org/2000/svg"
+        class="window-resize-edge resize-north"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-northeast"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-east"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-south"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-southwest"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-west"
+        data-cursor-hit-area="true"
+      />
+      <div
+        aria-hidden="true"
+        class="window-resize-edge resize-northwest"
+        data-cursor-hit-area="true"
+      />
+      <button
+        aria-label="Изменить размер окна"
+        class="window-resize-grip"
+        data-cursor-hit-area="true"
+        title="Изменить размер окна"
+        type="button"
       >
-        <circle
-          cx="12"
-          cy="5"
-          r="1"
+        <span
+          aria-hidden="true"
         />
-        <circle
-          cx="19"
-          cy="5"
-          r="1"
-        />
-        <circle
-          cx="5"
-          cy="5"
-          r="1"
-        />
-        <circle
-          cx="12"
-          cy="12"
-          r="1"
-        />
-        <circle
-          cx="19"
-          cy="12"
-          r="1"
-        />
-        <circle
-          cx="5"
-          cy="12"
-          r="1"
-        />
-        <circle
-          cx="12"
-          cy="19"
-          r="1"
-        />
-        <circle
-          cx="19"
-          cy="19"
-          r="1"
-        />
-        <circle
-          cx="5"
-          cy="19"
-          r="1"
-        />
-      </svg>
-    </button>
+      </button>
+    </div>
   </div>
 </div>
 `;
