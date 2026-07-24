@@ -1,7 +1,7 @@
 {
   "name": "focusnook-desktop",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "FocusNook desktop overlay app.",
   "license": "SEE LICENSE IN ../../LICENSE",
   "type": "module",

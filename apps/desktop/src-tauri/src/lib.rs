@@ -18,6 +18,7 @@ mod server_sync;
 mod sync;
 mod sync_blobs;
 mod sync_log;
+mod sync_snapshot;
 mod sync_status;
 #[cfg(feature = "cloud-providers")]
 mod sync_tokens;

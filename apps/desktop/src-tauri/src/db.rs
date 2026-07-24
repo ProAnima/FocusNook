@@ -6,7 +6,7 @@ use std::sync::Mutex;
 // per-profile ключ приходят из profiles::vault_location (раздел 15).
 pub struct Db(pub Mutex<Connection>);
 
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS plan_items (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -25,6 +25,8 @@ const MIGRATIONS: &[&str] = &[
     title TEXT,
     body TEXT NOT NULL,
     kind TEXT NOT NULL DEFAULT 'text',
+    audio_path TEXT,
+    group_id TEXT,
     created_at TEXT NOT NULL
 )",
     "CREATE TABLE IF NOT EXISTS reminders (
@@ -75,6 +77,10 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS sync_reconcile_state (
     profile_id TEXT PRIMARY KEY,
     last_reconciled_at TEXT NOT NULL
+)",
+    "CREATE TABLE IF NOT EXISTS sync_snapshot_state (
+    remote_profile_id TEXT PRIMARY KEY,
+    seeded_at TEXT NOT NULL
 )",
     "CREATE TABLE IF NOT EXISTS sync_blobs (
     profile_id TEXT NOT NULL,

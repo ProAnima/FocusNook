@@ -1173,16 +1173,18 @@ fn apply_reminder(
             let audio_path = string_field(patch, "audioPath");
             conn.execute(
                 "INSERT INTO reminders (id, title, audio_path, trigger_at_utc, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, 'scheduled', datetime('now'))
+                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
                  ON CONFLICT(id) DO UPDATE SET
                    title = excluded.title,
                    audio_path = excluded.audio_path,
-                   trigger_at_utc = excluded.trigger_at_utc",
+                   trigger_at_utc = excluded.trigger_at_utc,
+                   status = excluded.status",
                 params![
                     operation.entity_id,
                     string_field(patch, "title").unwrap_or(""),
                     audio_path,
                     string_field(patch, "triggerAtUtc").unwrap_or("1970-01-01T00:00:00.000Z"),
+                    string_field(patch, "status").unwrap_or("scheduled"),
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -1258,8 +1260,11 @@ fn apply_exchange_response(
     sent_operation_ids: &[String],
     response: SyncExchangeResponse,
 ) -> Result<(Option<String>, Vec<String>), String> {
-    let _accepted = response.accepted_count;
-    let _duplicates = response.duplicate_count;
+    validate_confirmed_count(
+        response.accepted_count,
+        response.duplicate_count,
+        sent_operation_ids.len(),
+    )?;
     mark_synced(conn, sent_operation_ids)?;
     let mut missing_blobs = Vec::new();
     let mut confirmed_pull_hlc = None;
@@ -1290,6 +1295,22 @@ fn apply_exchange_response(
         reconcile_remote_reminder_alarm(app, conn, &credentials.device_id, operation)?;
     }
     Ok((confirmed_pull_hlc.or(response.next_pull_hlc), missing_blobs))
+}
+
+fn validate_confirmed_count(
+    accepted_count: i64,
+    duplicate_count: i64,
+    sent_count: usize,
+) -> Result<(), String> {
+    let confirmed_count = accepted_count
+        .checked_add(duplicate_count)
+        .ok_or_else(|| "sync server returned invalid operation counters".to_string())?;
+    if accepted_count < 0 || duplicate_count < 0 || confirmed_count != sent_count as i64 {
+        return Err(format!(
+            "sync server confirmed {confirmed_count} of {sent_count} sent operations"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn reconcile_remote_reminder_alarm(
@@ -1360,7 +1381,11 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         )?;
     }
 
-    let mut full_reconcile_active = {
+    let mut snapshot_pending = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        !crate::sync_snapshot::is_seeded(&conn, &remote_profile_id)?
+    };
+    let mut full_reconcile_active = snapshot_pending || {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         should_run_full_reconcile(&conn, &remote_profile_id)?
     };
@@ -1458,7 +1483,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             }
         }
 
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
         store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
         if full_reconcile_active {
             full_reconcile_cursor = next_pull_hlc.clone();
@@ -1466,6 +1491,17 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
                 mark_full_reconciled(&conn, &remote_profile_id)?;
                 full_reconcile_active = false;
             }
+        }
+        if snapshot_pending && !full_reconcile_active {
+            let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+            crate::sync_snapshot::ensure_queued(
+                &mut conn,
+                &mut clock,
+                &profile_id,
+                &remote_profile_id,
+            )?;
+            snapshot_pending = false;
+            continue;
         }
 
         if !sent_full_page && !pulled_full_page {
@@ -2001,6 +2037,17 @@ mod tests {
         assert!(remote_synced.is_some());
         assert!(blob_uploaded.is_none());
         Ok(())
+    }
+
+    #[test]
+    fn does_not_accept_partial_server_confirmation() {
+        let error = validate_confirmed_count(0, 0, 1);
+        assert_eq!(
+            error,
+            Err("sync server confirmed 0 of 1 sent operations".to_string())
+        );
+        assert!(validate_confirmed_count(1, 1, 2).is_ok());
+        assert!(validate_confirmed_count(-1, 2, 1).is_err());
     }
 
     #[test]

@@ -17,6 +17,8 @@ requests APK.
 ## Every candidate
 
 1. Increase Android `versionCode`; never reuse a code uploaded to either store.
+   Follow `docs/releases/update-data-safety.md`: update test devices in place and
+   never uninstall or clear app storage as part of an upgrade.
 2. From `apps/desktop`, run
    `powershell -ExecutionPolicy Bypass -File scripts/android-release-preflight.ps1`.
    It runs all repository gates, builds one arm64 + armv7 AAB, verifies the
