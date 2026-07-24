@@ -418,6 +418,8 @@ struct UploadBlobResponse {
 #[serde(rename_all = "camelCase")]
 struct SyncEventResponse {
     changed: bool,
+    #[serde(default)]
+    sequence: u64,
 }
 
 async fn register_device(
@@ -740,13 +742,14 @@ async fn exchange_with_server(
 
 async fn wait_for_server_event(
     credentials: &ServerSyncCredentials,
+    after_sequence: u64,
 ) -> Result<SyncEventResponse, String> {
     let response = reqwest::Client::builder()
         .timeout(SERVER_EVENT_WAIT_TIMEOUT + std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?
         .get(format!(
-            "{}/v1/sync/events?timeoutMs={}",
+            "{}/v1/sync/events?timeoutMs={}&afterSequence={after_sequence}",
             credentials.endpoint,
             SERVER_EVENT_WAIT_TIMEOUT.as_millis()
         ))
@@ -1528,6 +1531,8 @@ fn event_listener_credentials(
 
 pub fn spawn_server_event_listener(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut last_sequence = 0;
+        let mut last_scope = None;
         loop {
             let credentials = match event_listener_credentials(&app) {
                 Ok(credentials) => credentials,
@@ -1539,12 +1544,27 @@ pub fn spawn_server_event_listener(app: tauri::AppHandle) {
             };
 
             let Some(credentials) = credentials else {
+                last_scope = None;
+                last_sequence = 0;
                 tokio::time::sleep(PERIODIC_SYNC_INTERVAL).await;
                 continue;
             };
+            let scope = format!(
+                "{}|{}",
+                credentials.endpoint,
+                credentials
+                    .account_user_id
+                    .as_deref()
+                    .unwrap_or(&credentials.token)
+            );
+            if last_scope.as_deref() != Some(scope.as_str()) {
+                last_scope = Some(scope);
+                last_sequence = 0;
+            }
 
-            match wait_for_server_event(&credentials).await {
+            match wait_for_server_event(&credentials, last_sequence).await {
                 Ok(event) if event.changed => {
+                    last_sequence = event.sequence.max(last_sequence);
                     spawn_best_effort(app.clone());
                 }
                 Ok(_) => {}
@@ -1560,6 +1580,11 @@ pub fn spawn_server_event_listener(app: tauri::AppHandle) {
 #[tauri::command]
 pub async fn sync_server_now(app: tauri::AppHandle) -> Result<ServerSyncStatus, String> {
     perform_sync(app).await
+}
+
+#[tauri::command]
+pub fn request_server_sync(app: tauri::AppHandle) {
+    spawn_best_effort(app);
 }
 
 #[tauri::command]

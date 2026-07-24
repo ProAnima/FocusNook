@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
@@ -56,6 +56,21 @@ describe("DayView", () => {
     expect(await screen.findByText("Проверить рендер")).toBeInTheDocument();
     expect(screen.getByText("1/2")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+  });
+
+  it("opens the complete task text and closes it with Escape", async () => {
+    const title =
+      "Очень длинная задача, текст которой не должен теряться из-за обрезки в строке списка";
+    list.mockResolvedValue([item({ title })]);
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByRole("button", { name: title }));
+    const dialog = screen.getByRole("dialog", { name: title });
+    expect(within(dialog).getByText(title)).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: title })).not.toBeInTheDocument();
   });
 
   it("shows an empty state when there are no items", async () => {

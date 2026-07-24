@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { currentMonitor, cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  currentMonitor,
+  cursorPosition,
+  getCurrentWindow,
+  LogicalSize,
+} from "@tauri-apps/api/window";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { physicalCursorToClient } from "./cursorCoordinates";
@@ -27,6 +32,16 @@ export type ThemeMode =
   | "nebula"
   | "ember"
   | "prism";
+
+export type ResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
 
 // Раздел 22 ТЗ: "i18n ru/en минимум, структура под 10 языков" — Locale как
 // союз-тип (не string) специально узкий, чтобы TypeScript сам не давал
@@ -188,6 +203,18 @@ export const commands = {
     },
     async setIgnoreCursorEvents(ignore: boolean): Promise<void> {
       await getCurrentWindow().setIgnoreCursorEvents(ignore);
+    },
+    async startResize(direction: ResizeDirection): Promise<void> {
+      await getCurrentWindow().startResizeDragging(direction);
+    },
+    async resizeBy(widthDelta: number, heightDelta: number): Promise<void> {
+      const win = getCurrentWindow();
+      const size = await win.innerSize();
+      const scale = await win.scaleFactor();
+      const logical = size.toLogical(scale);
+      const width = Math.min(900, Math.max(648, logical.width + widthDelta));
+      const height = Math.min(1200, Math.max(392, logical.height + heightDelta));
+      await win.setSize(new LogicalSize(width, height));
     },
   },
   profiles: {
@@ -370,6 +397,9 @@ export const commands = {
     },
     async syncNow(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("sync_server_now");
+    },
+    async request(): Promise<void> {
+      await invoke("request_server_sync");
     },
     async connectDefault(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_default_server_sync");

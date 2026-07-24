@@ -72,6 +72,7 @@ vi.mock("./shared/commands", () => {
       serverSync: {
         onCompleted: () => Promise.resolve(() => {}),
         onFailed: () => Promise.resolve(() => {}),
+        request: () => Promise.resolve(),
         status: () =>
           Promise.resolve({
             available: true,

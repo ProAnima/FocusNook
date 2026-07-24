@@ -10,6 +10,7 @@ version as `major * 1_000_000 + minor * 1_000 + patch`.
 | 0.1.1 | 1001 | mixed-DPI fix candidate | not uploaded | not uploaded | debug build only |
 | 0.1.2 | 1002 | WebView zoom reset candidate | not uploaded | not uploaded | debug build only |
 | 0.1.3 | 1003 | narrow CSS viewport fallback candidate | not uploaded | not uploaded | debug build only |
+| 0.1.4 | 1004 | sync, resize and full task text candidate | not uploaded | not uploaded | debug build only |
 
 Before each upload, record the artifact SHA-256 and store submission id in the
 release evidence file created from `docs/releases/release-evidence-template.md`.

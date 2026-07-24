@@ -165,7 +165,9 @@ invariants, for example reusing the same `operationId` or `blobId` with differen
 
 `GET /v1/sync/events` lets a client avoid polling `/v1/sync/exchange` on a fixed timer. It
 long-polls (`timeoutMs` query param, default `25000`, clamped to `1000`-`30000`) and returns
-as soon as another device's exchange call touches the same account:
+as soon as another device's exchange call touches the same account. Clients pass the last
+observed event cursor as `afterSequence`; this closes the reconnect gap where an event could
+otherwise arrive between two long-poll requests:
 `{"changed": true, "reason": "...", "sequence": N}`, or `{"changed": false, "reason": null,
 "sequence": 0}` on timeout. It is a wakeup signal only - the client still calls
 `/v1/sync/exchange` to fetch the actual operations.

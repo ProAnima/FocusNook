@@ -11,6 +11,7 @@ import { LocaleProvider } from "./shared/locale";
 import { useLayerToggle, type ShortcutInfo } from "./shared/useLayerToggle";
 import { useDesktopCursorPassthrough } from "./shared/useDesktopCursorPassthrough";
 import { useLiveBackgroundPointer } from "./shared/useLiveBackgroundPointer";
+import { useServerSyncWakeup } from "./shared/useServerSyncWakeup";
 import { useLocale } from "./shared/useLocale";
 import { useProfiles } from "./shared/useProfiles";
 import { useTheme } from "./shared/useTheme";
@@ -23,6 +24,7 @@ import { ReminderAlert } from "./components/ReminderAlert";
 import { LiveBackground } from "./components/LiveBackground";
 import { OverlayHeader } from "./components/OverlayHeader";
 import { TabBar, type TabDefinition } from "./components/TabBar";
+import { WindowResizeHandles } from "./components/WindowResizeHandles";
 import "./App.css";
 
 type TabKey = "day" | "notes" | "reminders" | "settings";
@@ -118,6 +120,7 @@ function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide 
           )}
         </main>
       </div>
+      <WindowResizeHandles />
     </div>
   );
 }
@@ -207,6 +210,7 @@ function Shell() {
   const folderRailSide = useFolderRailSide(isDesktop);
   useDesktopCursorPassthrough(isDesktop);
   useLiveBackgroundPointer(effective);
+  useServerSyncWakeup();
   return isDesktop ? (
     <DesktopShell
       front={front}

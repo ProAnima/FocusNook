@@ -51,14 +51,27 @@ impl SyncEventHub {
         let _ = sender.send(event);
     }
 
-    pub async fn wait(&self, user_id: Uuid, wait_for: Duration) -> Option<SyncEvent> {
+    pub async fn wait_after(
+        &self,
+        user_id: Uuid,
+        after_sequence: u64,
+        wait_for: Duration,
+    ) -> Option<SyncEvent> {
         let mut receiver = {
             let mut inner = self.inner.lock().ok()?;
-            inner
+            let current_sequence = inner.sequences.get(&user_id).copied().unwrap_or(0);
+            let receiver = inner
                 .channels
                 .entry(user_id)
                 .or_insert_with(|| broadcast::channel(CHANNEL_CAPACITY).0)
-                .subscribe()
+                .subscribe();
+            if current_sequence > after_sequence {
+                return Some(SyncEvent {
+                    sequence: current_sequence,
+                    reason: "catch-up".to_string(),
+                });
+            }
+            receiver
         };
 
         match timeout(wait_for, receiver.recv()).await {
@@ -93,7 +106,7 @@ mod tests {
         let user_id = Uuid::now_v7();
         let waiter = {
             let hub = hub.clone();
-            tokio::spawn(async move { hub.wait(user_id, Duration::from_secs(1)).await })
+            tokio::spawn(async move { hub.wait_after(user_id, 0, Duration::from_secs(1)).await })
         };
         tokio::task::yield_now().await;
         hub.notify(user_id, "operation");
@@ -109,8 +122,21 @@ mod tests {
     async fn wait_times_out_without_event() {
         let hub = SyncEventHub::default();
 
-        let event = hub.wait(Uuid::now_v7(), Duration::from_millis(1)).await;
+        let event = hub
+            .wait_after(Uuid::now_v7(), 0, Duration::from_millis(1))
+            .await;
 
         assert!(event.is_none());
+    }
+
+    #[tokio::test]
+    async fn wait_after_catches_an_event_published_before_subscription() {
+        let hub = SyncEventHub::default();
+        let user_id = Uuid::now_v7();
+        hub.notify(user_id, "operation");
+
+        let event = hub.wait_after(user_id, 0, Duration::from_millis(1)).await;
+
+        assert_eq!(event.map(|value| value.sequence), Some(1));
     }
 }

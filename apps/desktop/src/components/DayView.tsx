@@ -26,8 +26,10 @@ import {
 import { buildCalendarMarks } from "../shared/calendarMarks";
 import { EmptyState } from "./EmptyState";
 import { CalendarPopover } from "./CalendarPopover";
+import { PlanItemDetailsDialog } from "./PlanItemDetailsDialog";
 
 interface PlanItemActions {
+  onOpenDetails: (item: PlanItem) => void;
   onToggleDone: (id: string) => void;
   onCycleProgress: (id: string) => void;
   onToggleDeferred: (id: string) => void;
@@ -118,7 +120,14 @@ function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActio
       >
         {item.status === "done" && <Check size={12} />}
       </button>
-      <span className="plan-title">{item.title}</span>
+      <button
+        className="plan-title"
+        type="button"
+        onClick={() => actions.onOpenDetails(item)}
+        aria-label={item.title}
+      >
+        {item.title}
+      </button>
       {item.status === "partial" && (
         <button
           className="plan-progress"
@@ -195,6 +204,7 @@ export function DayView() {
   const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => monthKeyFromDateKey(todayDateKey()));
+  const [detailsItem, setDetailsItem] = useState<PlanItem | null>(null);
   const plan = usePlanItems(selectedDate, selectedDate === todayDateKey());
   const { reminders } = useReminders();
   const calendarItems = useCalendarItems(calendarMonth);
@@ -208,6 +218,7 @@ export function DayView() {
   }
 
   const actions: PlanItemActions = {
+    onOpenDetails: setDetailsItem,
     onToggleDone: plan.toggleDone,
     onCycleProgress: plan.cycleProgress,
     onToggleDeferred: plan.toggleDeferred,
@@ -247,6 +258,9 @@ export function DayView() {
         />
       )}
       <PlanList loaded={plan.loaded} items={plan.items} actions={actions} />
+      {detailsItem && (
+        <PlanItemDetailsDialog item={detailsItem} onClose={() => setDetailsItem(null)} />
+      )}
 
       <form className="quick-add" onSubmit={handleSubmit}>
         <Plus size={14} />

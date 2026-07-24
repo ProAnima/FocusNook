@@ -1212,6 +1212,7 @@ pub fn run() {
             server_sync::delete_server_account,
             server_sync::disconnect_server_sync,
             server_sync::sync_server_now,
+            server_sync::request_server_sync,
             open_privacy_policy
         ])
         .run(tauri::generate_context!())

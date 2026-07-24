@@ -398,7 +398,11 @@ async fn wait_for_sync_event(
     let timeout_ms = query.timeout_ms.unwrap_or(25_000).clamp(1_000, 30_000);
     let event = state
         .sync_events
-        .wait(auth.user_id, std::time::Duration::from_millis(timeout_ms))
+        .wait_after(
+            auth.user_id,
+            query.after_sequence.unwrap_or(0),
+            std::time::Duration::from_millis(timeout_ms),
+        )
         .await;
     Ok(Json(match event {
         Some(event) => SyncEventResponse {
@@ -1173,6 +1177,7 @@ struct SyncExchangeRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SyncEventQuery {
+    after_sequence: Option<u64>,
     timeout_ms: Option<u64>,
 }
 
