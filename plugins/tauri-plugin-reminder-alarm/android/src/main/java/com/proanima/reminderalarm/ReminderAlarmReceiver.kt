@@ -17,6 +17,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val id = intent.getStringExtra(EXTRA_ID) ?: return
     val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+    AlarmScheduler.markDelivered(context, id)
 
     ensureChannel(context)
 

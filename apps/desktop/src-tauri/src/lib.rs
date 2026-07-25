@@ -674,6 +674,18 @@ fn cancel_android_alarm(app: &tauri::AppHandle, id: &str) {
     }
 }
 
+#[cfg(target_os = "android")]
+fn restore_android_alarms(app: &tauri::AppHandle, conn: &rusqlite::Connection) {
+    match reminders::list(conn) {
+        Ok(items) => {
+            for reminder in items.iter().filter(|item| item.status == "scheduled") {
+                schedule_android_alarm(app, reminder);
+            }
+        }
+        Err(err) => eprintln!("reminder-alarm: не удалось восстановить alarms: {err}"),
+    }
+}
+
 #[tauri::command]
 fn create_reminder(
     app: tauri::AppHandle,
@@ -1111,6 +1123,8 @@ pub fn run() {
             let android_key_hex =
                 android_vault_key::resolve_for_platform(app.handle(), &data_dir, &keyring_user)?;
             let conn = db::open(&vault_path, &keyring_user, android_key_hex.as_deref())?;
+            #[cfg(target_os = "android")]
+            restore_android_alarms(app.handle(), &conn);
 
             // Раздел 9 ТЗ, Iteration 2: device_id/HLC — per-profile (см.
             // sync_log.rs), поэтому загружаются из того же vault, что и conn,

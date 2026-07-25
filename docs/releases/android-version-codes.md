@@ -13,6 +13,7 @@ version as `major * 1_000_000 + minor * 1_000 + patch`.
 | 0.1.4 | 1004 | sync, resize and full task text candidate | not uploaded | not uploaded | debug build only |
 | 0.1.5 | 1005 | anchored resize grip and in-card task details candidate | not uploaded | not uploaded | debug build only |
 | 0.1.6 | 1006 | sync recovery and update data-preservation candidate | not uploaded | not uploaded | debug build only |
+| 0.1.7 | 1007 | Android plaintext vault to SQLCipher migration hotfix | not uploaded | not uploaded | debug build only |
 
 Before each upload, record the artifact SHA-256 and store submission id in the
 release evidence file created from `docs/releases/release-evidence-template.md`.

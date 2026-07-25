@@ -157,13 +157,6 @@ pub fn vault_key_for_audio(keyring_user: &str) -> Result<Option<String>, String>
     vault_key(keyring_user).map(Some)
 }
 
-// cfg_attr(android, allow(dead_code)) на этом и следующих двух элементах —
-// определения нужны компилируемыми на Android уже сейчас (сборка целиком,
-// см. Cargo.toml), но единственный вызов migrate_plaintext_if_needed внутри
-// open() остаётся выключен на Android до тех пор, пока android-таргет
-// rusqlite не начнёт реально линковаться с SQLCipher (см. docs/v1-release-plan.md)
-// — sqlcipher_export на обычном SQLite это не no-op, а хардфейл.
-#[cfg_attr(target_os = "android", allow(dead_code))]
 const SQLITE_PLAINTEXT_MAGIC: &[u8; 16] = b"SQLite format 3\0";
 
 // Настоящий (незашифрованный) SQLite-файл всегда начинается с этой сигнатуры;
@@ -171,7 +164,6 @@ const SQLITE_PLAINTEXT_MAGIC: &[u8; 16] = b"SQLite format 3\0";
 // Разбор ошибок чтения (файла нет / он короче 16 байт) как "не похоже на
 // plaintext" — не ошибка сама по себе, migrate_plaintext_if_needed ниже и так
 // отдельно проверяет существование файла до вызова этой функции.
-#[cfg_attr(target_os = "android", allow(dead_code))]
 fn looks_like_plaintext_sqlite(path: &Path) -> bool {
     use std::io::Read;
     let Ok(mut file) = std::fs::File::open(path) else {
@@ -198,7 +190,6 @@ fn looks_like_plaintext_sqlite(path: &Path) -> bool {
 // Если предыдущая попытка миграции упала между этими двумя шагами (path
 // уже нет, а .plaintext-backup ещё есть) — доводим её до конца с backup,
 // а не заводим на его месте пустой новый vault.
-#[cfg_attr(target_os = "android", allow(dead_code))]
 fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String> {
     let backup_path = PathBuf::from(format!("{}.plaintext-backup", path.display()));
 
@@ -257,20 +248,18 @@ pub fn open(
         .ok_or_else(|| "android vault key was not resolved before db::open".to_string())?
         .to_string();
 
-    // Только desktop: на Android этот шаг остаётся выключен, пока
-    // android-таргет rusqlite реально не линкуется с SQLCipher (см. Cargo.toml
-    // и docs/v1-release-plan.md) — sqlcipher_export на обычном SQLite не no-op,
-    // а хардфейл "no such function", в отличие от PRAGMA key ниже.
-    #[cfg(not(target_os = "android"))]
+    // Ранние Android-сборки использовали обычный bundled SQLite. После
+    // включения SQLCipher такой plaintext-vault нельзя открывать сразу с
+    // PRAGMA key: SQLCipher возвращает "file is not a database" и Tauri падает
+    // в setup. Теперь обе платформы линкуются с SQLCipher, поэтому выполняем
+    // одну и ту же безопасную конвертацию с сохранением исходного backup.
     migrate_plaintext_if_needed(path, &key)?;
 
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
 
     // Raw-key синтаксис SQLCipher: PRAGMA key = "x'<64 hex>'" — обязательно
     // через execute_batch как есть, иначе rusqlite экранирует кавычки внутри
-    // значения и это перестаёт быть распознаваемым BLOB-литералом. На Android,
-    // пока rusqlite собирается без sqlcipher-фичи, неизвестная PRAGMA — это
-    // безопасный no-op в самом SQLite, а не ошибка.
+    // значения и это перестаёт быть распознаваемым BLOB-литералом.
     conn.execute_batch(&format!("PRAGMA key = \"x'{key}'\";"))
         .map_err(|e| e.to_string())?;
 
@@ -414,9 +403,8 @@ fn ensure_sync_blobs_columns(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-// Плейнтекст-детект/миграция и per-profile ключ — понятия, которых на
-// Android нет (см. #[cfg] на самих функциях), поэтому и тесты на них имеют
-// смысл только здесь.
+// Тесты запускаются на host-платформе, но проверяют общий для desktop и
+// Android путь plaintext -> SQLCipher.
 #[cfg(all(test, not(target_os = "android")))]
 mod tests {
     #![allow(clippy::unwrap_used)]

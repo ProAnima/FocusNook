@@ -10,6 +10,8 @@ import android.os.Build
 // от React через Rust), и из BootReceiver (пересоздание alarms после
 // перезагрузки, раздел 11 ТЗ) — второму нужен только Context, не Activity.
 object AlarmScheduler {
+  private const val PREFERENCES_NAME = "focusnook-reminder-alarms"
+
   fun canScheduleExact(context: Context): Boolean {
     val alarmManager = context.getSystemService(AlarmManager::class.java)
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
@@ -24,12 +26,28 @@ object AlarmScheduler {
     } else {
       alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
     }
+    pendingAlarms(context).edit().putLong(id, triggerAtMillis).apply()
     return exact
   }
 
   fun cancel(context: Context, id: String) {
     val alarmManager = context.getSystemService(AlarmManager::class.java)
     alarmManager.cancel(pendingIntentFor(context, id, ""))
+    markDelivered(context, id)
+  }
+
+  fun restorePending(context: Context) {
+    for ((id, value) in pendingAlarms(context).all) {
+      val triggerAtMillis = value as? Long ?: continue
+      // Reminder text stays in the encrypted vault. After a reboot the system
+      // can restore timing without Kotlin trying to open SQLCipher or keeping
+      // sensitive titles in plaintext SharedPreferences.
+      schedule(context, id, "", triggerAtMillis)
+    }
+  }
+
+  fun markDelivered(context: Context, id: String) {
+    pendingAlarms(context).edit().remove(id).apply()
   }
 
   private fun pendingIntentFor(context: Context, id: String, title: String): PendingIntent {
@@ -44,4 +62,7 @@ object AlarmScheduler {
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
   }
+
+  private fun pendingAlarms(context: Context) =
+    context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 }
