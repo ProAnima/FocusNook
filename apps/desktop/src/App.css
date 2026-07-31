@@ -3944,6 +3944,38 @@ textarea {
   background: var(--surface-gradient);
 }
 
+.account-window-shell {
+  overflow: hidden !important;
+}
+
+.account-window-drag {
+  flex: 0 0 34px;
+}
+
+.account-window-drag .brand {
+  pointer-events: none;
+}
+
+.account-window-body {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.account-window-shell .account-gate {
+  min-height: 100%;
+  padding: 16px 20px 20px;
+  background: transparent;
+}
+
+.account-window-shell .account-card {
+  max-height: none;
+  overflow: visible;
+}
+
 .account-card {
   width: min(100%, 390px);
   max-height: calc(100vh - 40px);
@@ -4029,4 +4061,6 @@ textarea {
 @media (max-width: 600px) {
   .account-gate { padding: 0; align-items: stretch; }
   .account-card { width: 100%; max-height: 100vh; padding: max(28px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom)); border: 0; border-radius: 0; box-shadow: none; }
+  .account-window-shell .account-gate { padding: 12px 14px 18px; align-items: start; }
+  .account-window-shell .account-card { width: 100%; max-height: none; padding: 22px 18px; border: 1px solid var(--surface-border); border-radius: 14px; box-shadow: none; }
 }

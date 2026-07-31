@@ -27,6 +27,7 @@ import { OverlayHeader } from "./components/OverlayHeader";
 import { TabBar, type TabDefinition } from "./components/TabBar";
 import { WindowResizeHandles } from "./components/WindowResizeHandles";
 import { AccountGate } from "./components/AccountGate";
+import { AccountWindowChrome } from "./components/AccountWindowChrome";
 import "./App.css";
 
 type TabKey = "day" | "notes" | "reminders" | "settings";
@@ -222,7 +223,7 @@ function Shell() {
   if (accounts.loading) return <div className="account-gate" />;
   const setupRequired = !accounts.activeProfile?.accountConfigured;
   if (setupRequired || accounts.sessionLocked) {
-    return (
+    const gate = (
       <AccountGate
         accounts={accounts.profiles}
         activeAccount={accounts.activeProfile}
@@ -232,6 +233,7 @@ function Shell() {
         onSignIn={accounts.switchAccount}
       />
     );
+    return isDesktop ? <AccountWindowChrome>{gate}</AccountWindowChrome> : gate;
   }
   return isDesktop ? (
     <DesktopShell

@@ -7,10 +7,19 @@ function fallbackIsDesktop() {
   return window.innerWidth >= 720;
 }
 
+function previewIsDesktop(): boolean | null {
+  if (!import.meta.env.DEV) return null;
+  const value = new URLSearchParams(window.location.search).get("platformPreview");
+  if (value === "desktop") return true;
+  if (value === "mobile") return false;
+  return null;
+}
+
 export function useLayerToggle() {
+  const platformPreview = previewIsDesktop();
   const [front, setFront] = useState(true);
   const [shortcutInfo, setShortcutInfo] = useState<ShortcutInfo | null>(null);
-  const [isDesktop, setIsDesktop] = useState(fallbackIsDesktop);
+  const [isDesktop, setIsDesktop] = useState(platformPreview ?? fallbackIsDesktop);
 
   const toggleLayer = useCallback(() => {
     commands.overlay.toggle().catch(() => {
@@ -19,6 +28,7 @@ export function useLayerToggle() {
   }, []);
 
   useEffect(() => {
+    if (platformPreview !== null) return;
     commands.overlay
       .getShortcutStatus()
       .then(setShortcutInfo)
@@ -37,7 +47,7 @@ export function useLayerToggle() {
     return () => {
       void unlistenChanged.then((fn) => fn());
     };
-  }, []);
+  }, [platformPreview]);
 
   return { front, toggleLayer, shortcutInfo, isDesktop };
 }
