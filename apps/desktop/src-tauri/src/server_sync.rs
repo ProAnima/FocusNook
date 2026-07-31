@@ -11,14 +11,26 @@ const SERVER_SYNC_KEYRING_SERVICE: &str = "com.proanima.focusnook.server-sync";
 #[cfg(not(target_os = "android"))]
 const SERVER_SYNC_KEY_PREFIX: &str = "vds_server";
 pub(crate) const MAX_OPS_PER_EXCHANGE: usize = 100;
+const MAX_PENDING_OPERATION_SCAN: usize = MAX_OPS_PER_EXCHANGE * 10;
 const MAX_EXCHANGE_ROUNDS: usize = 20;
 const PERIODIC_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const SERVER_EVENT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 const SERVER_EVENT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
+const HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+const BLOB_TRANSFER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 const FULL_RECONCILE_INTERVAL_SECONDS: i64 = 15 * 60;
 const PRIVACY_POLICY_VERSION: &str = "2026-07-16";
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+fn http_client(timeout: std::time::Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
+        .timeout(timeout)
+        .build()
+        .map_err(|e| e.to_string())
+}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -427,7 +439,7 @@ async fn register_device(
     user_token: &str,
     device_id: &str,
 ) -> Result<String, String> {
-    let response = reqwest::Client::new()
+    let response = http_client(HTTP_REQUEST_TIMEOUT)?
         .post(format!("{endpoint}/v1/devices"))
         .bearer_auth(user_token)
         .json(&RegisterDeviceRequest {
@@ -461,7 +473,7 @@ async fn authenticate_account(
     device_id: &str,
     privacy_accepted: bool,
 ) -> Result<(String, ServerAccountSession), String> {
-    let response = reqwest::Client::new()
+    let response = http_client(HTTP_REQUEST_TIMEOUT)?
         .post(format!("{endpoint}{path}"))
         .json(&AccountAuthRequest {
             email,
@@ -563,6 +575,14 @@ pub(crate) fn unsynced_operations(
     conn: &Connection,
     profile_id: &str,
 ) -> Result<Vec<LocalOperation>, String> {
+    unsynced_operations_with_limit(conn, profile_id, MAX_OPS_PER_EXCHANGE)
+}
+
+fn unsynced_operations_with_limit(
+    conn: &Connection,
+    profile_id: &str,
+    limit: usize,
+) -> Result<Vec<LocalOperation>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT operation_id, device_id, entity_type, entity_id, op, patch, hlc, schema_version
@@ -573,7 +593,7 @@ pub(crate) fn unsynced_operations(
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(params![profile_id, MAX_OPS_PER_EXCHANGE as i64], |row| {
+        .query_map(params![profile_id, limit as i64], |row| {
             Ok(LocalOperation {
                 operation_id: row.get(0)?,
                 device_id: row.get(1)?,
@@ -589,6 +609,43 @@ pub(crate) fn unsynced_operations(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
+}
+
+fn local_attachment_ids(operation: &LocalOperation) -> Result<Vec<String>, String> {
+    if operation.op == "delete" {
+        return Ok(Vec::new());
+    }
+    let patch: Value = serde_json::from_str(&operation.patch)
+        .map_err(|e| format!("local operation patch is invalid json: {e}"))?;
+    Ok(attachment_refs_from_patch(&patch)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect())
+}
+
+fn ready_unsynced_operations(
+    conn: &Connection,
+    profile_id: &str,
+) -> Result<Vec<LocalOperation>, String> {
+    let candidates = unsynced_operations_with_limit(conn, profile_id, MAX_PENDING_OPERATION_SCAN)?;
+    let mut ready = Vec::with_capacity(MAX_OPS_PER_EXCHANGE);
+    for operation in candidates {
+        let attachment_ids = local_attachment_ids(&operation)?;
+        let mut dependencies_ready = true;
+        for blob_id in attachment_ids {
+            if !sync_blobs::is_uploaded(conn, profile_id, &blob_id)? {
+                dependencies_ready = false;
+                break;
+            }
+        }
+        if dependencies_ready {
+            ready.push(operation);
+            if ready.len() == MAX_OPS_PER_EXCHANGE {
+                break;
+            }
+        }
+    }
+    Ok(ready)
 }
 
 pub(crate) fn mark_synced(conn: &Connection, operation_ids: &[String]) -> Result<(), String> {
@@ -648,10 +705,12 @@ fn prepare_account_scope_if_needed(
 // account_auth.rs) — для них операции остаются как раньше, без шифрования,
 // а не ломаются; это тот же компромисс, что уже принят для blob-вложений
 // (сравни credentials.media_key.as_deref() в upload_pending_blobs выше).
-fn encode_operation_payload(media_key: Option<&str>, patch: &str) -> String {
-    match media_key.and_then(|key| blob_crypto::encrypt(key, patch.as_bytes()).ok()) {
-        Some(encrypted) => STANDARD.encode(encrypted),
-        None => patch.to_string(),
+fn encode_operation_payload(media_key: Option<&str>, patch: &str) -> Result<String, String> {
+    match media_key {
+        Some(key) => {
+            blob_crypto::encrypt(key, patch.as_bytes()).map(|bytes| STANDARD.encode(bytes))
+        }
+        None => Ok(patch.to_string()),
     }
 }
 
@@ -681,32 +740,35 @@ fn decode_operation_payload(
 pub(crate) fn remote_operation_from_local(
     operation: &LocalOperation,
     media_key: Option<&str>,
-) -> RemoteOperation {
-    RemoteOperation {
+) -> Result<RemoteOperation, String> {
+    Ok(RemoteOperation {
         device_id: operation.device_id.clone(),
         entity_id: operation.entity_id.clone(),
         entity_type: operation.entity_type.clone(),
         hlc: operation.hlc.clone(),
         op: operation.op.clone(),
         operation_id: operation.operation_id.clone(),
-        payload_ciphertext: encode_operation_payload(media_key, &operation.patch),
+        payload_ciphertext: encode_operation_payload(media_key, &operation.patch)?,
         schema_version: operation.schema_version,
-    }
+    })
 }
 
-fn client_operation(operation: &LocalOperation, media_key: Option<&str>) -> ClientOperation {
-    ClientOperation {
+fn client_operation(
+    operation: &LocalOperation,
+    media_key: Option<&str>,
+) -> Result<ClientOperation, String> {
+    Ok(ClientOperation {
         device_id: operation.device_id.clone(),
         entity_id: operation.entity_id.clone(),
         entity_type: operation.entity_type.clone(),
         hlc: operation.hlc.clone(),
         op: operation.op.clone(),
         operation_id: operation.operation_id.clone(),
-        payload_ciphertext: encode_operation_payload(media_key, &operation.patch),
+        payload_ciphertext: encode_operation_payload(media_key, &operation.patch)?,
         payload_key_id: None,
         payload_nonce: None,
         schema_version: operation.schema_version,
-    }
+    })
 }
 
 async fn exchange_with_server(
@@ -715,16 +777,17 @@ async fn exchange_with_server(
     last_pulled: Option<String>,
     operations: &[LocalOperation],
 ) -> Result<SyncExchangeResponse, String> {
+    let encrypted_operations = operations
+        .iter()
+        .map(|operation| client_operation(operation, credentials.media_key.as_deref()))
+        .collect::<Result<Vec<_>, _>>()?;
     let request = SyncExchangeRequest {
         device_id: credentials.device_id.clone(),
         last_pulled_hlc: last_pulled,
-        operations: operations
-            .iter()
-            .map(|operation| client_operation(operation, credentials.media_key.as_deref()))
-            .collect(),
+        operations: encrypted_operations,
         profile_id: profile_id.to_string(),
     };
-    let response = reqwest::Client::new()
+    let response = http_client(HTTP_REQUEST_TIMEOUT)?
         .post(format!("{}/v1/sync/exchange", credentials.endpoint))
         .bearer_auth(&credentials.token)
         .json(&request)
@@ -744,10 +807,7 @@ async fn wait_for_server_event(
     credentials: &ServerSyncCredentials,
     after_sequence: u64,
 ) -> Result<SyncEventResponse, String> {
-    let response = reqwest::Client::builder()
-        .timeout(SERVER_EVENT_WAIT_TIMEOUT + std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?
+    let response = http_client(SERVER_EVENT_WAIT_TIMEOUT + std::time::Duration::from_secs(5))?
         .get(format!(
             "{}/v1/sync/events?timeoutMs={}&afterSequence={after_sequence}",
             credentials.endpoint,
@@ -766,31 +826,27 @@ async fn wait_for_server_event(
         .map_err(|e| e.to_string())
 }
 
-async fn upload_prepared_blobs(
+async fn upload_prepared_blob(
     credentials: &ServerSyncCredentials,
-    uploads: Vec<sync_blobs::UploadBlobRequest>,
-) -> Result<Vec<(String, String, i64)>, String> {
-    let client = reqwest::Client::new();
-    let mut uploaded = Vec::with_capacity(uploads.len());
-    for request in uploads {
-        let sha256 = request.sha256.clone();
-        let response = client
-            .post(format!("{}/v1/blobs", credentials.endpoint))
-            .bearer_auth(&credentials.token)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if !response.status().is_success() {
-            return Err(format!("sync blob upload returned {}", response.status()));
-        }
-        let body = response
-            .json::<UploadBlobResponse>()
-            .await
-            .map_err(|e| e.to_string())?;
-        uploaded.push((body.blob_id, sha256, body.size_bytes));
+    request: sync_blobs::UploadBlobRequest,
+) -> Result<(String, String, i64), String> {
+    let client = http_client(BLOB_TRANSFER_TIMEOUT)?;
+    let sha256 = request.sha256.clone();
+    let response = client
+        .post(format!("{}/v1/blobs", credentials.endpoint))
+        .bearer_auth(&credentials.token)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("sync blob upload returned {}", response.status()));
     }
-    Ok(uploaded)
+    let body = response
+        .json::<UploadBlobResponse>()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((body.blob_id, sha256, body.size_bytes))
 }
 
 async fn download_blob(
@@ -798,7 +854,7 @@ async fn download_blob(
     profile_id: &str,
     blob_id: &str,
 ) -> Result<Option<sync_blobs::DownloadBlobResponse>, String> {
-    let response = reqwest::Client::new()
+    let response = http_client(BLOB_TRANSFER_TIMEOUT)?
         .get(format!(
             "{}/v1/blobs/{}/{}",
             credentials.endpoint, profile_id, blob_id
@@ -808,7 +864,6 @@ async fn download_blob(
         .await
         .map_err(|e| e.to_string())?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
-        eprintln!("server-sync: blob {blob_id} is missing on server, keeping metadata only");
         return Ok(None);
     }
     if !response.status().is_success() {
@@ -828,7 +883,7 @@ pub async fn ensure_audio_blob_downloaded(
     audio_key: Option<&str>,
     blob_id: &str,
 ) -> Result<(), String> {
-    if audio_dir.join(blob_id).exists() {
+    if sync_blobs::audio_file_path(audio_dir, blob_id)?.exists() {
         return Ok(());
     }
     let credentials = {
@@ -844,7 +899,9 @@ pub async fn ensure_audio_blob_downloaded(
             .to_string()
     })?;
     let Some(downloaded) = download_blob(&credentials, &remote_profile_id, blob_id).await? else {
-        return Ok(());
+        return Err(format!(
+            "audio blob {blob_id} is missing on the sync server"
+        ));
     };
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     sync_blobs::materialize_download(
@@ -865,67 +922,133 @@ async fn upload_pending_blobs(
     remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
-) -> Result<(), String> {
-    let prepared_uploads = {
+) -> Result<usize, String> {
+    let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let pending = sync_blobs::pending_uploads(&conn, local_profile_id)?;
-        if pending.is_empty() {
-            Vec::new()
-        } else {
-            let Some(media_key) = credentials.media_key.as_deref() else {
+        sync_blobs::pending_uploads(&conn, local_profile_id)?
+    };
+    let mut blocked = 0;
+    for record in pending {
+        let path = sync_blobs::audio_file_path(audio_dir, &record.local_path)?;
+        let Some(media_key) = credentials.media_key.as_deref() else {
+            eprintln!(
+                "server-sync: attachment {} is waiting for a media key",
+                record.blob_id
+            );
+            blocked += 1;
+            continue;
+        };
+        if !path.exists() {
+            eprintln!(
+                "server-sync: attachment {} is waiting for its local file",
+                record.blob_id
+            );
+            blocked += 1;
+            continue;
+        }
+        let prepared = {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            sync_blobs::upload_request(
+                &conn,
+                local_profile_id,
+                remote_profile_id,
+                audio_dir,
+                audio_key,
+                media_key,
+                &record,
+            )
+        };
+        let request = match prepared {
+            Ok(request) => request,
+            Err(err) => {
                 eprintln!(
-                    "server-sync: media key is missing, deferring {} pending blob upload(s)",
-                    pending.len()
+                    "server-sync: attachment {} could not be prepared: {err}",
+                    record.blob_id
                 );
-                return Ok(());
-            };
-            let mut prepared = Vec::new();
-            for record in pending {
-                if !audio_dir.join(&record.local_path).exists() {
-                    sync_blobs::mark_missing_upload_deferred(
-                        &conn,
-                        local_profile_id,
-                        &record.blob_id,
-                    )?;
-                    eprintln!(
-                        "server-sync: blob {} has no local file, treating it as download-only",
-                        record.blob_id
-                    );
-                    continue;
-                }
-                match sync_blobs::upload_request(
-                    &conn,
-                        local_profile_id,
-                        remote_profile_id,
-                        audio_dir,
-                        audio_key,
-                        media_key,
-                    &record,
-                ) {
-                    Ok(request) => prepared.push(request),
-                    Err(err) => eprintln!(
-                        "server-sync: deferring blob upload {} because it cannot be prepared: {err}",
-                        record.blob_id
-                    ),
-                }
+                blocked += 1;
+                continue;
             }
-            prepared
-        }
-    };
-    let uploaded = match upload_prepared_blobs(credentials, prepared_uploads).await {
-        Ok(uploaded) => uploaded,
-        Err(err) => {
-            eprintln!("server-sync: blob upload lane failed, continuing operation sync: {err}");
-            return Ok(());
-        }
-    };
-    if !uploaded.is_empty() {
+        };
+        let (blob_id, sha256, size_bytes) = match upload_prepared_blob(credentials, request).await {
+            Ok(uploaded) => uploaded,
+            Err(err) => {
+                eprintln!(
+                    "server-sync: attachment {} upload is pending: {err}",
+                    record.blob_id
+                );
+                blocked += 1;
+                continue;
+            }
+        };
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        for (blob_id, sha256, size_bytes) in uploaded {
-            sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
+        sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
+    }
+    Ok(blocked)
+}
+
+async fn download_pending_blobs(
+    db: &crate::db::Db,
+    credentials: &ServerSyncCredentials,
+    local_profile_id: &str,
+    remote_profile_id: &str,
+    audio_dir: &std::path::Path,
+    audio_key: Option<&str>,
+) -> Result<usize, String> {
+    let pending = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        sync_blobs::pending_downloads(&conn, local_profile_id)?
+    };
+    let mut unavailable = 0;
+    for blob_id in pending {
+        if sync_blobs::audio_file_path(audio_dir, &blob_id)?.exists() {
+            continue;
+        }
+        let Some(media_key) = credentials.media_key.as_deref() else {
+            eprintln!("server-sync: attachment {blob_id} is waiting for a media key");
+            unavailable += 1;
+            continue;
+        };
+        let downloaded = match download_blob(credentials, remote_profile_id, &blob_id).await {
+            Ok(Some(downloaded)) => downloaded,
+            Ok(None) => {
+                eprintln!("server-sync: attachment {blob_id} is not available on the server");
+                unavailable += 1;
+                continue;
+            }
+            Err(err) => {
+                eprintln!("server-sync: attachment {blob_id} download is pending: {err}");
+                unavailable += 1;
+                continue;
+            }
+        };
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        if let Err(err) = sync_blobs::materialize_download(
+            &conn,
+            local_profile_id,
+            audio_dir,
+            audio_key,
+            media_key,
+            &blob_id,
+            &downloaded,
+        ) {
+            eprintln!("server-sync: attachment {blob_id} could not be materialized: {err}");
+            unavailable += 1;
         }
     }
-    Ok(())
+    Ok(unavailable)
+}
+
+fn transfer_status_message(blocked_uploads: usize, unavailable_downloads: usize) -> Option<String> {
+    let mut notices = Vec::new();
+    if blocked_uploads > 0 {
+        notices.push(format!("{blocked_uploads} attachment upload(s) pending"));
+    }
+    if unavailable_downloads > 0 {
+        notices.push(format!(
+            "{unavailable_downloads} attachment download(s) unavailable"
+        ));
+    }
+    (!notices.is_empty()).then(|| format!("sync completed; {}", notices.join("; ")))
 }
 
 fn operation_exists(
@@ -1020,6 +1143,40 @@ fn nullable_string_field(patch: &Value, key: &str) -> Option<Option<String>> {
     })
 }
 
+fn bool_field(patch: &Value, key: &str) -> Option<bool> {
+    patch.get(key).and_then(Value::as_bool)
+}
+
+fn attachment_refs_from_patch(patch: &Value) -> Vec<(String, String)> {
+    let mut refs = string_field(patch, "audioPath")
+        .map(|id| (id.to_string(), "audio/webm".to_string()))
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Some(items) = patch.get("attachmentIds").and_then(Value::as_array) {
+        refs.extend(
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|id| (id.to_string(), "application/octet-stream".to_string())),
+        );
+    }
+    if let Some(items) = patch.get("attachments").and_then(Value::as_array) {
+        refs.extend(items.iter().filter_map(|item| {
+            let id = item
+                .as_str()
+                .or_else(|| item.get("id").and_then(Value::as_str))?;
+            let content_type = item
+                .get("contentType")
+                .and_then(Value::as_str)
+                .unwrap_or("application/octet-stream");
+            Some((id.to_string(), content_type.to_string()))
+        }));
+    }
+    refs.sort_by(|left, right| left.0.cmp(&right.0));
+    refs.dedup_by(|left, right| left.0 == right.0);
+    refs
+}
+
 pub(crate) fn audio_blob_id_from_operation(
     operation: &RemoteOperation,
     media_key: Option<&str>,
@@ -1029,6 +1186,18 @@ pub(crate) fn audio_blob_id_from_operation(
     }
     let patch = decode_operation_payload(media_key, &operation.payload_ciphertext).ok()?;
     string_field(&patch, "audioPath").map(str::to_string)
+}
+
+fn attachment_refs_from_operation(
+    operation: &RemoteOperation,
+    media_key: Option<&str>,
+) -> Vec<(String, String)> {
+    if operation.op == "delete" {
+        return Vec::new();
+    }
+    decode_operation_payload(media_key, &operation.payload_ciphertext)
+        .map(|patch| attachment_refs_from_patch(&patch))
+        .unwrap_or_default()
 }
 
 fn apply_plan_item(
@@ -1042,15 +1211,25 @@ fn apply_plan_item(
             let status = string_field(patch, "status").unwrap_or("open");
             let plan_date = string_field(patch, "planDate").unwrap_or("1970-01-01");
             let progress = patch.get("progressPercent").and_then(Value::as_i64);
+            let is_long_running = bool_field(patch, "isLongRunning").unwrap_or(false);
             conn.execute(
-                "INSERT INTO plan_items (id, title, status, progress_percent, plan_date, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+                "INSERT INTO plan_items
+                   (id, title, status, progress_percent, plan_date, is_long_running, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
                  ON CONFLICT(id) DO UPDATE SET
                    title = excluded.title,
                    status = excluded.status,
                    progress_percent = excluded.progress_percent,
-                   plan_date = excluded.plan_date",
-                params![operation.entity_id, title, status, progress, plan_date],
+                   plan_date = excluded.plan_date,
+                   is_long_running = excluded.is_long_running",
+                params![
+                    operation.entity_id,
+                    title,
+                    status,
+                    progress,
+                    plan_date,
+                    is_long_running
+                ],
             )
         }
         "update" => {
@@ -1066,6 +1245,13 @@ fn apply_plan_item(
                 conn.execute(
                     "UPDATE plan_items SET plan_date = ?1 WHERE id = ?2",
                     params![plan_date, operation.entity_id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            if let Some(is_long_running) = bool_field(patch, "isLongRunning") {
+                conn.execute(
+                    "UPDATE plan_items SET is_long_running = ?1 WHERE id = ?2",
+                    params![is_long_running, operation.entity_id],
                 )
                 .map_err(|e| e.to_string())?;
             }
@@ -1106,6 +1292,12 @@ fn apply_note_group(
     .map_err(|e| e.to_string())
 }
 
+fn register_legacy_audio_reference(conn: &Connection, profile_id: &str, filename: &str) {
+    if let Err(err) = sync_blobs::ensure_downloadable_audio_blob(conn, profile_id, filename) {
+        eprintln!("server-sync: ignored invalid audio attachment reference {filename}: {err}");
+    }
+}
+
 fn apply_note(
     conn: &Connection,
     profile_id: &str,
@@ -1130,7 +1322,7 @@ fn apply_note(
             )
             .map_err(|e| e.to_string())?;
             if let Some(filename) = audio_path {
-                sync_blobs::ensure_downloadable_audio_blob(conn, profile_id, filename)?;
+                register_legacy_audio_reference(conn, profile_id, filename);
             }
             Ok(())
         }
@@ -1189,7 +1381,7 @@ fn apply_reminder(
             )
             .map_err(|e| e.to_string())?;
             if let Some(filename) = audio_path {
-                sync_blobs::ensure_downloadable_audio_blob(conn, profile_id, filename)?;
+                register_legacy_audio_reference(conn, profile_id, filename);
             }
             Ok(())
         }
@@ -1286,10 +1478,16 @@ fn apply_exchange_response(
             .map_err(|e| e.to_string())?;
         confirmed_pull_hlc = Some(operation.hlc.clone());
         if operation.device_id != credentials.device_id {
-            if let Some(blob_id) =
-                audio_blob_id_from_operation(operation, credentials.media_key.as_deref())
-            {
-                missing_blobs.push(blob_id);
+            let attachment_refs =
+                attachment_refs_from_operation(operation, credentials.media_key.as_deref());
+            for (blob_id, content_type) in &attachment_refs {
+                if let Err(err) =
+                    sync_blobs::ensure_downloadable_blob(conn, profile_id, blob_id, content_type)
+                {
+                    eprintln!("server-sync: ignored invalid attachment reference {blob_id}: {err}");
+                    continue;
+                }
+                missing_blobs.push(blob_id.clone());
             }
         }
         reconcile_remote_reminder_alarm(app, conn, &credentials.device_id, operation)?;
@@ -1392,7 +1590,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     let mut full_reconcile_cursor = None;
 
     for _ in 0..MAX_EXCHANGE_ROUNDS {
-        upload_pending_blobs(
+        let blocked_uploads = upload_pending_blobs(
             &db,
             &credentials,
             &profile_id,
@@ -1409,18 +1607,9 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             } else {
                 last_pulled_hlc(&conn, &remote_profile_id)?
             };
-            let operations = unsynced_operations(&conn, &profile_id)?;
+            let operations = ready_unsynced_operations(&conn, &profile_id)?;
             (last_pulled, operations)
         };
-        upload_pending_blobs(
-            &db,
-            &credentials,
-            &profile_id,
-            &remote_profile_id,
-            &audio_dir,
-            audio_key.as_deref(),
-        )
-        .await?;
         let sent_full_page = operations.len() == MAX_OPS_PER_EXCHANGE;
         let sent_operation_ids = operations
             .iter()
@@ -1431,7 +1620,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
                 .await?;
         let pulled_full_page = response.operations.len() == MAX_OPS_PER_EXCHANGE;
 
-        let (next_pull_hlc, mut missing_blobs) = {
+        let (next_pull_hlc, _) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
             apply_exchange_response(
                 &app,
@@ -1443,69 +1632,46 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
                 response,
             )?
         };
-        missing_blobs.sort();
-        missing_blobs.dedup();
-        if !missing_blobs.is_empty() {
-            if let Some(media_key) = credentials.media_key.as_deref() {
-                for blob_id in missing_blobs {
-                    let downloaded = match download_blob(&credentials, &remote_profile_id, &blob_id)
-                        .await
-                    {
-                        Ok(Some(downloaded)) => downloaded,
-                        Ok(None) => continue,
-                        Err(err) => {
-                            eprintln!(
-                                "server-sync: blob download {blob_id} failed, operation sync continues: {err}"
-                            );
-                            continue;
-                        }
-                    };
-                    let conn = db.0.lock().map_err(|e| e.to_string())?;
-                    if let Err(err) = sync_blobs::materialize_download(
-                        &conn,
-                        &profile_id,
-                        &audio_dir,
-                        audio_key.as_deref(),
-                        media_key,
-                        &blob_id,
-                        &downloaded,
-                    ) {
-                        eprintln!(
-                            "server-sync: blob materialize {blob_id} failed, operation sync continues: {err}"
-                        );
-                    }
+        let (snapshot_queued, exchange_complete) = {
+            let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+            store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
+            if full_reconcile_active {
+                full_reconcile_cursor = next_pull_hlc.clone();
+                if !pulled_full_page {
+                    mark_full_reconciled(&conn, &remote_profile_id)?;
+                    full_reconcile_active = false;
                 }
-            } else {
-                eprintln!(
-                    "server-sync: media key is missing, deferring {} blob download(s)",
-                    missing_blobs.len()
-                );
             }
-        }
-
-        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-        store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
-        if full_reconcile_active {
-            full_reconcile_cursor = next_pull_hlc.clone();
-            if !pulled_full_page {
-                mark_full_reconciled(&conn, &remote_profile_id)?;
-                full_reconcile_active = false;
+            let snapshot_queued = snapshot_pending && !full_reconcile_active;
+            if snapshot_queued {
+                let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+                crate::sync_snapshot::ensure_queued(
+                    &mut conn,
+                    &mut clock,
+                    &profile_id,
+                    &remote_profile_id,
+                )?;
+                snapshot_pending = false;
             }
-        }
-        if snapshot_pending && !full_reconcile_active {
-            let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
-            crate::sync_snapshot::ensure_queued(
-                &mut conn,
-                &mut clock,
-                &profile_id,
-                &remote_profile_id,
-            )?;
-            snapshot_pending = false;
+            (snapshot_queued, !sent_full_page && !pulled_full_page)
+        };
+        let unavailable_audio = download_pending_blobs(
+            &db,
+            &credentials,
+            &profile_id,
+            &remote_profile_id,
+            &audio_dir,
+            audio_key.as_deref(),
+        )
+        .await?;
+        if snapshot_queued {
             continue;
         }
 
-        if !sent_full_page && !pulled_full_page {
-            return status_for_profile(Some(&conn), &profile_id, configured, None);
+        if exchange_complete {
+            let message = transfer_status_message(blocked_uploads, unavailable_audio);
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            return status_for_profile(Some(&conn), &profile_id, configured, message);
         }
     }
 
@@ -1774,7 +1940,7 @@ pub async fn delete_server_account(
     if credentials.account_user_id.is_none() {
         return Err("connected credentials do not belong to an account".to_string());
     }
-    let response = reqwest::Client::new()
+    let response = http_client(HTTP_REQUEST_TIMEOUT)?
         .delete(format!("{}/v1/accounts", credentials.endpoint))
         .bearer_auth(&credentials.token)
         .json(&DeleteAccountRequest {
@@ -1809,6 +1975,7 @@ mod tests {
                 status TEXT NOT NULL,
                 progress_percent INTEGER,
                 plan_date TEXT NOT NULL,
+                is_long_running INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )",
             [],
@@ -2051,6 +2218,80 @@ mod tests {
     }
 
     #[test]
+    fn attachment_contract_supports_audio_and_future_images() {
+        let refs = attachment_refs_from_patch(&serde_json::json!({
+            "audioPath": "voice.webm",
+            "attachments": [
+                {"id": "picture.png", "contentType": "image/png"},
+                {"id": "picture.png", "contentType": "image/png"}
+            ]
+        }));
+
+        assert_eq!(
+            refs,
+            vec![
+                ("picture.png".to_string(), "image/png".to_string()),
+                ("voice.webm".to_string(), "audio/webm".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn blocked_attachment_does_not_starve_independent_text_operations() {
+        let conn = sync_test_conn();
+        conn.execute_batch(
+            "INSERT INTO sync_operations
+                (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+                 schema_version, created_at)
+             VALUES
+                ('audio-op', 'profile', 'device', 'note', 'audio', 'create',
+                 '{\"audioPath\":\"missing.webm\"}', '2026-07-01T00:00:00.000Z-0000-device', 1,
+                 datetime('now')),
+                ('text-op', 'profile', 'device', 'note', 'text', 'create',
+                 '{\"body\":\"ready\"}', '2026-07-01T00:00:01.000Z-0000-device', 1,
+                 datetime('now')),
+                ('image-op', 'profile', 'device', 'note', 'image', 'create',
+                 '{\"attachments\":[{\"id\":\"picture.png\",\"contentType\":\"image/png\"}]}',
+                 '2026-07-01T00:00:02.000Z-0000-device', 1, datetime('now'));
+             INSERT INTO sync_blobs
+                (profile_id, blob_id, local_path, content_type, created_at)
+             VALUES ('profile', 'picture.png', 'picture.png', 'image/png', datetime('now'));",
+        )
+        .unwrap();
+
+        let ready = ready_unsynced_operations(&conn, "profile").unwrap();
+        assert_eq!(
+            ready
+                .iter()
+                .map(|operation| operation.operation_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["text-op"]
+        );
+
+        sync_blobs::mark_uploaded(&conn, "profile", "picture.png", "sha", 10).unwrap();
+        let ready = ready_unsynced_operations(&conn, "profile").unwrap();
+        assert_eq!(
+            ready
+                .iter()
+                .map(|operation| operation.operation_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["text-op", "image-op"]
+        );
+    }
+
+    #[test]
+    fn transfer_warning_reports_degraded_media_without_failing_sync() {
+        assert_eq!(transfer_status_message(0, 0), None);
+        assert_eq!(
+            transfer_status_message(1, 2),
+            Some(
+                "sync completed; 1 attachment upload(s) pending; 2 attachment download(s) unavailable"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
     fn full_reconcile_is_due_until_marked_recently() -> Result<(), String> {
         let conn = sync_test_conn();
 
@@ -2102,7 +2343,8 @@ mod tests {
                 "title": "Call",
                 "status": "open",
                 "progressPercent": null,
-                "planDate": "2026-07-07"
+                "planDate": "2026-07-07",
+                "isLongRunning": true
             })
             .to_string(),
             schema_version: 1,
@@ -2111,11 +2353,11 @@ mod tests {
         apply_remote_operation(&conn, "profile-1", "desktop-device", &operation, None)?;
         apply_remote_operation(&conn, "profile-1", "desktop-device", &operation, None)?;
 
-        let title: String = conn
+        let (title, is_long_running): (String, bool) = conn
             .query_row(
-                "SELECT title FROM plan_items WHERE id = 'task-1'",
+                "SELECT title, is_long_running FROM plan_items WHERE id = 'task-1'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| e.to_string())?;
         let op_count: i64 = conn
@@ -2130,6 +2372,7 @@ mod tests {
             .map_err(|e| e.to_string())?;
 
         assert_eq!(title, "Call");
+        assert!(is_long_running);
         assert_eq!(op_count, 1);
         assert_eq!(synced_count, 1);
         Ok(())
@@ -2242,7 +2485,7 @@ mod tests {
     #[test]
     fn encode_operation_payload_encrypts_when_media_key_present() {
         let patch = r#"{"title":"Buy groceries","status":"open"}"#;
-        let encoded = encode_operation_payload(Some("test-media-key"), patch);
+        let encoded = encode_operation_payload(Some("test-media-key"), patch).unwrap();
         assert_ne!(encoded, patch);
         assert!(!encoded.contains("Buy groceries"));
     }
@@ -2250,13 +2493,13 @@ mod tests {
     #[test]
     fn encode_operation_payload_is_plaintext_passthrough_without_media_key() {
         let patch = r#"{"title":"Buy groceries"}"#;
-        assert_eq!(encode_operation_payload(None, patch), patch);
+        assert_eq!(encode_operation_payload(None, patch).unwrap(), patch);
     }
 
     #[test]
     fn decode_operation_payload_round_trips_through_encode() -> Result<(), String> {
         let patch = serde_json::json!({"title": "Buy groceries", "status": "open"});
-        let encoded = encode_operation_payload(Some("test-media-key"), &patch.to_string());
+        let encoded = encode_operation_payload(Some("test-media-key"), &patch.to_string()).unwrap();
 
         let decoded = decode_operation_payload(Some("test-media-key"), &encoded)?;
 
@@ -2277,7 +2520,7 @@ mod tests {
     #[test]
     fn decode_operation_payload_with_wrong_media_key_does_not_leak_plaintext() {
         let patch = serde_json::json!({"title": "Buy groceries"});
-        let encoded = encode_operation_payload(Some("correct-key"), &patch.to_string());
+        let encoded = encode_operation_payload(Some("correct-key"), &patch.to_string()).unwrap();
 
         // С неправильным ключом это не откатится на "как есть = plaintext",
         // потому что валидный base64/magic-конверт с чужим ключом это не тот

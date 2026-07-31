@@ -111,7 +111,9 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
         class="tabs "
       >
         <button
+          aria-label="День"
           class="tab tab-active"
+          title="День"
         >
           <svg
             aria-hidden="true"
@@ -166,7 +168,9 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
           </span>
         </button>
         <button
+          aria-label="Заметки"
           class="tab "
+          title="Заметки"
         >
           <svg
             aria-hidden="true"
@@ -205,7 +209,9 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
           </span>
         </button>
         <button
+          aria-label="Напоминания"
           class="tab "
+          title="Напоминания"
         >
           <svg
             aria-hidden="true"
@@ -705,7 +711,9 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
       class="tabs bottom-nav"
     >
       <button
+        aria-label="День"
         class="tab tab-active"
+        title="День"
       >
         <svg
           aria-hidden="true"
@@ -760,7 +768,9 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
         </span>
       </button>
       <button
+        aria-label="Заметки"
         class="tab "
+        title="Заметки"
       >
         <svg
           aria-hidden="true"
@@ -799,7 +809,9 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
         </span>
       </button>
       <button
+        aria-label="Напоминания"
         class="tab "
+        title="Напоминания"
       >
         <svg
           aria-hidden="true"
@@ -832,7 +844,9 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
         </span>
       </button>
       <button
+        aria-label="Настройки"
         class="tab "
+        title="Настройки"
       >
         <svg
           aria-hidden="true"

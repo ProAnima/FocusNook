@@ -305,7 +305,7 @@ fn merge_operations(
     remote: &[server_sync::RemoteOperation],
     local: &[server_sync::LocalOperation],
     media_key: &str,
-) -> Vec<server_sync::RemoteOperation> {
+) -> Result<Vec<server_sync::RemoteOperation>, String> {
     let mut merged = remote.to_vec();
     for operation in local {
         if !merged
@@ -315,7 +315,7 @@ fn merge_operations(
             merged.push(server_sync::remote_operation_from_local(
                 operation,
                 Some(media_key),
-            ));
+            )?);
         }
     }
     merged.sort_by(|a, b| {
@@ -323,7 +323,7 @@ fn merge_operations(
             .cmp(&b.hlc)
             .then_with(|| a.operation_id.cmp(&b.operation_id))
     });
-    merged
+    Ok(merged)
 }
 
 fn latest_hlc(operations: &[server_sync::RemoteOperation]) -> Option<String> {
@@ -427,11 +427,13 @@ async fn upload_pending_blobs(
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let mut prepared = Vec::new();
         for record in sync_blobs::pending_uploads(&conn, local_profile_id)? {
-            if !audio_dir.join(&record.local_path).exists() {
-                sync_blobs::mark_missing_upload_deferred(&conn, local_profile_id, &record.blob_id)?;
-                continue;
+            if !sync_blobs::audio_file_path(audio_dir, &record.local_path)?.exists() {
+                return Err(format!(
+                    "audio blob {} is pending upload, but its local file is missing",
+                    record.blob_id
+                ));
             }
-            match sync_blobs::upload_request(
+            prepared.push(sync_blobs::upload_request(
                 &conn,
                 local_profile_id,
                 remote_profile_id,
@@ -439,13 +441,7 @@ async fn upload_pending_blobs(
                 audio_key,
                 media_key,
                 &record,
-            ) {
-                Ok(request) => prepared.push(request),
-                Err(err) => eprintln!(
-                    "cloud-sync: deferring blob upload {} because it cannot be prepared: {err}",
-                    record.blob_id
-                ),
-            }
+            )?);
         }
         prepared
     };
@@ -470,10 +466,12 @@ async fn download_missing_blobs(
 ) -> Result<(), String> {
     for blob_id in blob_ids {
         let Some(downloaded) = download_blob_from_google(access_token, &blob_id).await? else {
-            continue;
+            return Err(format!(
+                "audio blob {blob_id} referenced by sync is missing in Google Drive"
+            ));
         };
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        if let Err(err) = sync_blobs::materialize_download(
+        sync_blobs::materialize_download(
             &conn,
             profile_id,
             audio_dir,
@@ -481,9 +479,7 @@ async fn download_missing_blobs(
             media_key,
             &blob_id,
             &downloaded,
-        ) {
-            eprintln!("cloud-sync: blob materialize {blob_id} failed: {err}");
-        }
+        )?;
     }
     Ok(())
 }
@@ -549,7 +545,7 @@ async fn perform_google_sync(app: tauri::AppHandle) -> Result<CloudSyncStatus, S
                 .collect::<Vec<_>>();
             (local_ops, sent_ids)
         };
-        let merged = merge_operations(&journal.operations, &local_ops, &journal.media_key);
+        let merged = merge_operations(&journal.operations, &local_ops, &journal.media_key)?;
         if merged == journal.operations {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
             server_sync::store_last_pulled_hlc(
@@ -676,7 +672,8 @@ mod tests {
             &[remote("note-1", "2026-07-08T10:00:00.000Z-0000-a")],
             &[local],
             "test-media-key",
-        );
+        )
+        .unwrap();
 
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[1].operation_id, "local-op");

@@ -9,9 +9,7 @@ import {
   Inbox,
   Mic,
   NotebookPen,
-  Pause,
   Pencil,
-  Play,
   Plus,
   Square,
   Trash2,
@@ -22,110 +20,14 @@ import { useNotes } from "../shared/useNotes";
 import { useAudioRecorder } from "../shared/useAudioRecorder";
 import { useLocale } from "../shared/useLocale";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
-import { useOutsideClick } from "../shared/useOutsideClick";
 import { useHoldToConfirm } from "../shared/useHoldToConfirm";
+import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { EmptyState } from "./EmptyState";
+import { FolderMoveMenu } from "./FolderMoveMenu";
+import { ItemDetailsDialog } from "./ItemDetailsDialog";
 
 const NOTE_DRAG_TYPE = "application/x-focusnook-note-id";
 type FolderSelection = string | null | "__all";
-
-function base64ToBlobUrl(base64: string): string {
-  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  return URL.createObjectURL(new Blob([bytes], { type: "audio/webm" }));
-}
-
-function formatAudioTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
-
-function AudioNotePlayer({ noteId }: { noteId: string }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [src, setSrc] = useState<string | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [current, setCurrent] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const { t } = useLocale();
-
-  useEffect(() => {
-    let url: string | null = null;
-    let cancelled = false;
-    commands.notes
-      .getAudio(noteId)
-      .then((base64) => {
-        if (cancelled) return;
-        url = base64ToBlobUrl(base64);
-        setSrc(url);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [noteId]);
-
-  function toggle() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      void audio.play();
-    } else {
-      audio.pause();
-    }
-  }
-
-  function seek(value: string) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Number(value);
-    setCurrent(audio.currentTime);
-  }
-
-  return (
-    <div className="note-audio-card">
-      <button
-        className="note-audio-play"
-        type="button"
-        onClick={toggle}
-        disabled={!src}
-        title={playing ? t("notes.pauseAudio") : t("notes.playAudio")}
-        aria-label={playing ? t("notes.pauseAudio") : t("notes.playAudio")}
-      >
-        {playing ? <Pause size={13} /> : <Play size={13} />}
-      </button>
-      <div className="note-audio-main">
-        <div className="note-audio-meta">
-          <span>{t("notes.audio")}</span>
-          <small>{src ? `${formatAudioTime(current)} / ${formatAudioTime(duration)}` : t("notes.audioLoading")}</small>
-        </div>
-        <input
-          className="note-audio-progress"
-          type="range"
-          min="0"
-          max={duration || 0}
-          step="0.1"
-          value={Math.min(current, duration || current)}
-          disabled={!src}
-          aria-label={t("notes.audioProgress")}
-          onChange={(event) => seek(event.currentTarget.value)}
-        />
-      </div>
-      {src && (
-        <audio
-          ref={audioRef}
-          src={src}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
-          onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
-        />
-      )}
-    </div>
-  );
-}
 
 function NoteEditor({
   initialBody,
@@ -173,64 +75,12 @@ function NoteEditor({
   );
 }
 
-function FolderMoveMenu({
-  groups,
-  note,
-  onMove,
-}: {
-  groups: NoteGroup[];
-  note: Note;
-  onMove: (id: string, groupId: string | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const { t } = useLocale();
-  useOutsideClick(rootRef, () => setOpen(false));
-  const options = [{ id: null, name: t("notes.ungrouped") }, ...groups.map((group) => ({ id: group.id, name: group.name }))];
-
-  function move(groupId: string | null) {
-    setOpen(false);
-    if (groupId !== note.groupId) onMove(note.id, groupId);
-  }
-
-  return (
-    <div className="note-folder-menu" ref={rootRef}>
-      <button
-        className="icon-button"
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        title={t("notes.moveToFolder")}
-        aria-label={t("notes.moveToFolder")}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <FolderOpen size={13} />
-      </button>
-      {open && (
-        <div className="note-folder-menu-list" role="menu" aria-label={t("notes.moveToFolder")}>
-          {options.map((option) => (
-            <button
-              key={option.id ?? "__ungrouped"}
-              className={`note-folder-menu-item ${option.id === note.groupId ? "is-active" : ""}`}
-              type="button"
-              role="menuitem"
-              onClick={() => move(option.id)}
-            >
-              <span>{option.name}</span>
-              {option.id === note.groupId && <Check size={12} />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function NoteRow({
   groups,
   isDesktop,
   note,
   onDelete,
+  onOpenDetails,
   onMove,
   onUpdate,
 }: {
@@ -238,6 +88,7 @@ function NoteRow({
   isDesktop: boolean;
   note: Note;
   onDelete: (id: string) => void;
+  onOpenDetails: (note: Note) => void;
   onMove: (id: string, groupId: string | null) => void;
   onUpdate: (id: string, body: string) => void;
 }) {
@@ -271,7 +122,7 @@ function NoteRow({
       )}
       <div className="note-content">
         {note.kind === "audio" ? (
-          <AudioNotePlayer noteId={note.id} />
+          <AudioMessagePlayer audioId={note.id} loadAudio={commands.notes.getAudio} onOpenDetails={() => onOpenDetails(note)} />
         ) : editing ? (
           <NoteEditor
             initialBody={note.body}
@@ -282,7 +133,9 @@ function NoteRow({
             }}
           />
         ) : (
-          <span className="note-body">{note.body}</span>
+          <button className="note-body" type="button" onClick={() => onOpenDetails(note)}>
+            {note.body}
+          </button>
         )}
       </div>
       <div className="note-item-actions">
@@ -684,6 +537,7 @@ export function NotesView({ isDesktop = true }: { isDesktop?: boolean }) {
   const [activeGroupId, setActiveGroupId] = useState<FolderSelection>("__all");
   const [folderSort, setFolderSort] = useState<NoteFolderSort>("recent");
   const [draft, setDraft] = useState("");
+  const [detailsNote, setDetailsNote] = useState<Note | null>(null);
   const { t } = useLocale();
   const visibleNotes = useMemo(
     () => (activeGroupId === "__all" ? notes : notes.filter((note) => note.groupId === activeGroupId)),
@@ -726,6 +580,7 @@ export function NotesView({ isDesktop = true }: { isDesktop?: boolean }) {
               isDesktop={isDesktop}
               note={note}
               onDelete={deleteNote}
+              onOpenDetails={setDetailsNote}
               onMove={(id, groupId) => void moveNoteToGroup(id, groupId)}
               onUpdate={(id, body) => void updateNote(id, body)}
             />
@@ -739,6 +594,18 @@ export function NotesView({ isDesktop = true }: { isDesktop?: boolean }) {
         onSubmit={handleSubmit}
         onAudioRecorded={(base64) => void addAudioNote(base64, composerGroupId)}
       />
+
+      {detailsNote && (
+        <ItemDetailsDialog
+          ariaLabel={detailsNote.body || t("notes.audio")}
+          onClose={() => setDetailsNote(null)}
+        >
+          {detailsNote.body && <p>{detailsNote.body}</p>}
+          {detailsNote.audioPath && (
+            <AudioMessagePlayer audioId={detailsNote.id} loadAudio={commands.notes.getAudio} />
+          )}
+        </ItemDetailsDialog>
+      )}
     </div>
   );
 }

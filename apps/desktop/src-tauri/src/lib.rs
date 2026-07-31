@@ -352,6 +352,25 @@ fn toggle_plan_item_deferred(
 }
 
 #[tauri::command]
+fn toggle_plan_item_long_running(
+    app: tauri::AppHandle,
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+) -> Result<plan_items::PlanItemDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let item = plan_items::toggle_long_running(&mut conn, &mut clock, &profile_id, &id)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
+}
+
+#[tauri::command]
 fn move_plan_item_to_date(
     app: tauri::AppHandle,
     db: tauri::State<db::Db>,
@@ -1197,6 +1216,7 @@ pub fn run() {
             toggle_plan_item_done,
             cycle_plan_item_progress,
             toggle_plan_item_deferred,
+            toggle_plan_item_long_running,
             move_plan_item_to_date,
             roll_over_pending_plan_items,
             delete_plan_item,

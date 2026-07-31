@@ -4,11 +4,13 @@ use std::path::Path;
 use tauri::{LogicalSize, Manager, PhysicalPosition};
 
 const WINDOW_STATE_FILENAME: &str = "window-state.json";
-const LOGICAL_SIZE_STATE_VERSION: u8 = 2;
-const MIN_WIDTH: u32 = 648;
-const MIN_HEIGHT: u32 = 392;
-const MAX_WIDTH: u32 = 900;
+const LOGICAL_SIZE_STATE_VERSION: u8 = 3;
+const MIN_WIDTH: u32 = 280;
+const MIN_HEIGHT: u32 = 260;
+const MAX_WIDTH: u32 = 520;
 const MAX_HEIGHT: u32 = 1200;
+const LEGACY_HORIZONTAL_TRANSPARENT_SPACE: u32 = 268;
+const LEGACY_VERTICAL_TRANSPARENT_SPACE: u32 = 28;
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -45,13 +47,32 @@ fn restored_size(state: &MainWindowState, scale_factor: f64) -> (u32, u32) {
         return clamp_size(state.width, state.height);
     }
 
-    // v1 stored outer_size() verbatim, which is physical pixels. Reinterpret it
-    // once using the current monitor scale so a 648 px window does not become
-    // only 432 CSS px at 150% Windows scaling.
+    let scale = if state.version >= 2 {
+        1.0
+    } else {
+        usable_scale_factor(scale_factor)
+    };
+    let legacy_width = (f64::from(state.width) / scale).round() as u32;
+    let legacy_height = (f64::from(state.height) / scale).round() as u32;
+    clamp_size(
+        legacy_width.saturating_sub(LEGACY_HORIZONTAL_TRANSPARENT_SPACE),
+        legacy_height.saturating_sub(LEGACY_VERTICAL_TRANSPARENT_SPACE),
+    )
+}
+
+fn restored_position(state: &MainWindowState, scale_factor: f64) -> (Option<i32>, Option<i32>) {
+    if state.version >= LOGICAL_SIZE_STATE_VERSION {
+        return (state.x, state.y);
+    }
     let scale = usable_scale_factor(scale_factor);
-    let width = (f64::from(state.width) / scale).round() as u32;
-    let height = (f64::from(state.height) / scale).round() as u32;
-    clamp_size(width, height)
+    let horizontal_offset =
+        (f64::from(LEGACY_HORIZONTAL_TRANSPARENT_SPACE) * scale / 2.0).round() as i32;
+    let vertical_offset =
+        (f64::from(LEGACY_VERTICAL_TRANSPARENT_SPACE) * scale / 2.0).round() as i32;
+    (
+        state.x.map(|x| x.saturating_add(horizontal_offset)),
+        state.y.map(|y| y.saturating_add(vertical_offset)),
+    )
 }
 
 fn load_state(data_dir: &Path) -> Option<MainWindowState> {
@@ -95,6 +116,9 @@ pub fn apply(app: &tauri::AppHandle, data_dir: &Path) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     let scale_factor = window.scale_factor().unwrap_or(1.0);
+    if let (Some(x), Some(y)) = restored_position(&state, scale_factor) {
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
     apply_size(&window, &state, scale_factor);
 }
 
@@ -135,7 +159,7 @@ mod tests {
 
     #[test]
     fn clamps_tiny_or_huge_sizes() {
-        assert_eq!(clamp_size(10, 10), (648, MIN_HEIGHT));
+        assert_eq!(clamp_size(10, 10), (MIN_WIDTH, MIN_HEIGHT));
         assert_eq!(clamp_size(2000, 2000), (MAX_WIDTH, MAX_HEIGHT));
     }
 
@@ -149,20 +173,34 @@ mod tests {
             y: None,
         };
 
-        assert_eq!(restored_size(&state, 1.5), (MIN_WIDTH, 539));
+        assert_eq!(restored_size(&state, 1.5), (MIN_WIDTH, 511));
+    }
+
+    #[test]
+    fn removes_legacy_transparent_bounds_without_changing_visible_size() {
+        let state = MainWindowState {
+            version: 2,
+            width: 648,
+            height: 796,
+            x: Some(100),
+            y: Some(200),
+        };
+
+        assert_eq!(restored_size(&state, 1.0), (380, 768));
+        assert_eq!(restored_position(&state, 1.0), (Some(234), Some(214)));
     }
 
     #[test]
     fn keeps_current_logical_size_at_scaled_dpi() {
         let state = MainWindowState {
             version: LOGICAL_SIZE_STATE_VERSION,
-            width: 720,
+            width: 480,
             height: 640,
             x: None,
             y: None,
         };
 
-        assert_eq!(restored_size(&state, 2.0), (720, 640));
+        assert_eq!(restored_size(&state, 2.0), (480, 640));
     }
 
     #[test]
@@ -186,7 +224,7 @@ mod tests {
             load_state(&dir),
             Some(MainWindowState {
                 version: LOGICAL_SIZE_STATE_VERSION,
-                width: 648,
+                width: 420,
                 height: 640,
                 x: Some(24),
                 y: Some(48),

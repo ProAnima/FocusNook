@@ -34,20 +34,14 @@ textarea {
 }
 
 :root {
-  --desktop-shadow-gutter: 14px;
-  --desktop-shell-width: clamp(380px, calc(100vw - 268px), 520px);
-  --folder-rail-offset: 60px;
+  --desktop-shell-width: 100%;
 }
 
 .desktop-stage {
   position: relative;
   width: 100%;
   height: 100%;
-  padding:
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter);
+  padding: 0;
   display: flex;
   justify-content: center;
   overflow: hidden;
@@ -60,11 +54,7 @@ textarea {
 }
 
 .desktop-stage[data-folder-rail-side="right"] {
-  padding:
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter)
-    var(--desktop-shadow-gutter);
+  padding: 0;
 }
 
 .window-resize-edge,
@@ -522,6 +512,32 @@ textarea {
 
 /* --- Общий layout вкладок со списком + quick-add (День, Заметки) --- */
 
+@media (max-width: 320px) {
+  .desktop-stage .drag-zone {
+    padding-left: 10px;
+  }
+
+  .desktop-stage .tabs {
+    justify-content: space-around;
+    padding-inline: 8px;
+  }
+
+  .desktop-stage .tab {
+    flex: 1;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .desktop-stage .tab span {
+    display: none;
+  }
+
+  .desktop-stage .body {
+    padding: 10px;
+  }
+
+}
+
 .tab-view {
   display: flex;
   flex-direction: column;
@@ -706,6 +722,15 @@ textarea {
   background: var(--warning);
 }
 
+.plan-groups {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
 .plan-list {
   list-style: none;
   margin: 0;
@@ -713,8 +738,46 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 1;
-  overflow-y: auto;
+}
+
+.long-running-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 5px 3px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 68%, var(--divider));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent-soft-bg) 34%, transparent);
+}
+
+.long-running-header {
+  min-height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px;
+  color: var(--accent);
+}
+
+.long-running-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.long-running-count {
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  opacity: 0.72;
 }
 
 .plan-item {
@@ -729,6 +792,16 @@ textarea {
 
 .plan-item:hover {
   background: var(--control-bg);
+}
+
+.plan-item.is-long-running {
+  padding-block: 5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.plan-item.is-long-running:hover {
+  background: color-mix(in srgb, var(--control-bg) 68%, transparent);
 }
 
 .plan-checkbox {
@@ -804,6 +877,87 @@ textarea {
   overflow-wrap: anywhere;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.plan-details-dialog .note-audio-card {
+  margin-top: 16px;
+}
+
+.plan-details-dialog .item-details-meta {
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.plan-long-running-toggle {
+  width: 100%;
+  min-height: 58px;
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-long-running-toggle:hover,
+.plan-long-running-toggle.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.plan-long-running-toggle > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.plan-long-running-toggle strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.plan-long-running-toggle small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.plan-details-actions {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.plan-details-actions button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.plan-details-actions button:hover {
+  border-color: var(--accent-soft-border);
+  color: var(--text-primary);
 }
 
 .plan-details-close {
@@ -885,11 +1039,19 @@ textarea {
   min-height: 0;
 }
 
+.desktop-stage[data-folder-rail-side="left"] .notes-shell {
+  padding-left: 54px;
+}
+
+.desktop-stage[data-folder-rail-side="right"] .notes-shell {
+  padding-right: 54px;
+}
+
 .note-folder-rail {
   position: absolute;
   top: 4px;
   bottom: auto;
-  left: calc(-1 * var(--folder-rail-offset));
+  left: 0;
   z-index: 12;
   width: 46px;
   max-height: calc(100% - 8px);
@@ -911,7 +1073,7 @@ textarea {
 }
 
 .desktop-stage[data-folder-rail-side="right"] .note-folder-rail {
-  right: calc(-1 * var(--folder-rail-offset));
+  right: 0;
   left: auto;
 }
 
@@ -991,7 +1153,8 @@ textarea {
 
 .note-folder-label {
   position: absolute;
-  right: calc(100% + 8px);
+  right: auto;
+  left: calc(100% + 8px);
   top: 50%;
   z-index: 2;
   width: max-content;
@@ -1012,14 +1175,14 @@ textarea {
   box-shadow: 0 7px 14px rgba(0, 0, 0, 0.32);
   opacity: 0;
   pointer-events: none;
-  transform: translate(4px, -50%);
+  transform: translate(-4px, -50%);
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .desktop-stage[data-folder-rail-side="right"] .note-folder-label {
-  right: auto;
-  left: calc(100% + 8px);
-  transform: translate(-4px, -50%);
+  right: calc(100% + 8px);
+  left: auto;
+  transform: translate(4px, -50%);
 }
 
 .note-folder-rail:hover .note-folder-label,
@@ -1232,6 +1395,13 @@ textarea {
 }
 
 .note-body {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -1301,10 +1471,8 @@ textarea {
 }
 
 .note-folder-menu-list {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
-  z-index: 9;
+  position: fixed;
+  z-index: 1000;
   min-width: 142px;
   max-width: 190px;
   max-height: 184px;
@@ -1403,6 +1571,37 @@ textarea {
   font-weight: 600;
 }
 
+.note-audio-open {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.note-audio-open:hover,
+.note-audio-open:focus-visible {
+  color: var(--accent);
+}
+
+.note-audio-card.is-error .note-audio-play {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-soft-bg);
+  color: var(--danger);
+}
+
+.note-audio-card.is-error .note-audio-meta small {
+  color: var(--danger);
+}
+
 .note-audio-meta small {
   flex: none;
   color: var(--text-tertiary);
@@ -1487,6 +1686,13 @@ textarea {
 
 .reminder-title {
   flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
   overflow: hidden;
@@ -2804,6 +3010,54 @@ textarea {
   opacity: 1;
 }
 
+.mobile-shell .plan-item-actions .long-running-action {
+  display: none;
+}
+
+.mobile-shell .long-running-group {
+  gap: 2px;
+  padding: 6px 7px 5px;
+  border-radius: 8px;
+}
+
+.mobile-shell .long-running-heading {
+  font-size: 11px;
+}
+
+.mobile-shell .long-running-group .plan-item {
+  min-height: 50px;
+  padding: 8px 5px;
+  gap: 10px;
+}
+
+.mobile-shell .long-running-group .plan-checkbox {
+  width: 26px;
+  height: 26px;
+}
+
+.mobile-shell .long-running-group .plan-title {
+  font-size: 14px;
+}
+
+.mobile-shell .long-running-group .icon-button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.mobile-shell .long-running-group .plan-item-actions {
+  display: none;
+}
+
+.mobile-shell .plan-details-actions button {
+  min-height: 46px;
+  border-radius: 11px;
+}
+
+.mobile-shell .plan-long-running-toggle {
+  min-height: 64px;
+  border-radius: 14px;
+}
+
 .mobile-shell .icon-button,
 .mobile-shell .note-audio-play,
 .mobile-shell .time-stepper button {
@@ -3263,7 +3517,7 @@ textarea {
 }
 
 .mobile-shell .day-date {
-  font-size: clamp(21px, 5.6vw, 26px);
+  font-size: 18px;
   font-weight: 760;
   line-height: 1.08;
 }
@@ -3278,6 +3532,7 @@ textarea {
   min-height: 44px;
 }
 
+.mobile-shell .plan-groups,
 .mobile-shell .plan-list,
 .mobile-shell .note-list,
 .mobile-shell .reminder-list {
@@ -3287,6 +3542,7 @@ textarea {
   scrollbar-width: none;
 }
 
+.mobile-shell .plan-groups::-webkit-scrollbar,
 .mobile-shell .plan-list::-webkit-scrollbar,
 .mobile-shell .note-list::-webkit-scrollbar,
 .mobile-shell .reminder-list::-webkit-scrollbar,
@@ -3381,10 +3637,10 @@ textarea {
 }
 
 .mobile-shell .note-body {
-  display: block;
+  display: -webkit-box;
   font-size: clamp(17px, 4.8vw, 20px);
   line-height: 1.15;
-  -webkit-line-clamp: unset;
+  -webkit-line-clamp: 3;
 }
 
 .mobile-shell .note-item-actions {

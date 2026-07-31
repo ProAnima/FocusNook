@@ -1,8 +1,7 @@
 # FocusNook sync attachments
 
-This document describes the production contract for synchronized attachments. The first supported
-attachment type is a voice recording, but the model is intentionally generic enough for images and
-small text files.
+This document describes the production contract for synchronized attachments. Voice recordings,
+images, and future small files use the same client queue, encryption, retry, and VDS blob API.
 
 ## Goals
 
@@ -26,8 +25,14 @@ Client-side attachments are tracked in `sync_blobs`:
 - `sync_payload_base64`: cached encrypted upload body for deterministic retries.
 - `uploaded_at`, `downloaded_at`, `deleted_at`: local transfer state.
 
-Future attachment types should use the same table. The only type-specific part should be the local
-directory resolver and MIME type, for example `image/jpeg`, `image/png`, or `text/plain`.
+The legacy table name is preserved for migration compatibility. New code treats every row as an
+attachment. The only type-specific fields are the MIME type and local renderer.
+
+Operations may reference attachments using:
+
+- legacy `audioPath` for existing voice notes and reminders;
+- `attachmentIds: string[]` for content-type-neutral references;
+- `attachments: { id: string, contentType: string }[]` for images and future files.
 
 ## Encryption Layers
 
@@ -51,21 +56,29 @@ Upload flow:
 1. A note or reminder with `audioPath` is created locally.
 2. The local mutation is written to `sync_operations`.
 3. The attachment is registered in `sync_blobs`.
-4. Sync prepares and uploads pending blobs first.
-5. Only after blob upload succeeds, sync exchanges operation metadata.
+4. The attachment outbox attempts every pending upload independently.
+5. An operation is publishable only when its own referenced attachments have server acknowledgements.
+6. Text-only operations and operations whose attachments are ready are exchanged immediately.
 
 Download flow:
 
 1. Sync pulls remote operations.
 2. Remote note/reminder operations are applied locally.
-3. `audioPath` values from remote operations are collected as missing blobs.
-4. Each blob is downloaded, checksum-verified, decrypted with the media key, and materialized
-   locally.
-5. The pull cursor is advanced only after required blobs are processed.
+3. The pull cursor is committed after the operation batch is safely applied.
+4. Attachment references are registered in the independent attachment inbox.
+5. Each available attachment is downloaded, checksum-verified, decrypted, and materialized.
+6. Missing attachments remain pending and produce a degraded-media warning without rolling back
+   the operation cursor.
 
-This prevents the common failure mode where another device sees a voice note before the audio blob
-exists on the server. If a legacy or corrupt remote operation references a missing blob, the client
-keeps the metadata and logs the missing blob instead of blocking all future sync forever.
+## Reliability Invariants
+
+- A broken attachment can block only operations that reference that attachment.
+- A missing download can never block later text, tasks, reminders, or other attachments.
+- Uploads are retried with the same encrypted payload and stable id.
+- The server accepts duplicate uploads and operations idempotently.
+- The operation cursor represents applied metadata, never attachment availability.
+- Attachment availability is represented only by the attachment outbox/inbox state.
+- Integrity or decryption failures never write unverified plaintext to local storage.
 
 ## Scaling Rules
 

@@ -289,10 +289,10 @@ pub fn read_audio(
             |row| row.get(0),
         )
         .map_err(|_| "аудио для этой заметки не найдено".to_string())?;
-    let raw = fs::read(audio_dir.join(filename)).map_err(|e| e.to_string())?;
+    let path = audio_dir.join(filename);
     let bytes = match audio_key {
-        Some(key) => audio_crypto::decrypt_if_needed(key, &raw)?,
-        None => raw,
+        Some(key) => audio_crypto::read_and_migrate(&path, key)?,
+        None => fs::read(path).map_err(|e| e.to_string())?,
     };
     Ok(STANDARD.encode(bytes))
 }

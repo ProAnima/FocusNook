@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NotesView } from "./NotesView";
 
@@ -78,6 +78,19 @@ describe("NotesView", () => {
     render(<NotesView />);
 
     expect(await screen.findByText("Идея для раздела 14")).toBeInTheDocument();
+  });
+
+  it("opens the full note text in the shared details dialog", async () => {
+    const body = "Очень длинный текст заметки, который не должен оставаться обрезанным";
+    list.mockResolvedValue([note({ body })]);
+    const user = userEvent.setup();
+    render(<NotesView />);
+
+    await user.click(await screen.findByRole("button", { name: body }));
+
+    expect(screen.getByRole("dialog", { name: body })).toHaveTextContent(body);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: body })).not.toBeInTheDocument();
   });
 
   it("shows an empty state when there are no notes", async () => {
@@ -166,6 +179,22 @@ describe("NotesView", () => {
     await waitFor(() => expect(moveToGroup).toHaveBeenCalledWith("n1", "g1"));
   });
 
+  it("renders the folder menu in a portal outside the clipped note list", async () => {
+    list.mockResolvedValue([note({ id: "n1", body: "В папку" })]);
+    listGroups.mockResolvedValue([{ id: "g1", name: "Архив" }]);
+    moveToGroup.mockResolvedValue(note({ id: "n1", body: "В папку", groupId: "g1" }));
+    const user = userEvent.setup();
+    render(<NotesView />);
+
+    await screen.findByText("В папку");
+    await user.click(screen.getByTitle("Переместить в папку"));
+    const menu = screen.getByRole("menu", { name: "Переместить в папку" });
+
+    expect(menu.closest(".note-list")).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: "Архив" }));
+    expect(moveToGroup).toHaveBeenCalledWith("n1", "g1");
+  });
+
   it("keeps shift-enter as a line break in the note composer", async () => {
     create.mockResolvedValue(note({ id: "2", body: "Первая\nВторая" }));
     const user = userEvent.setup();
@@ -237,6 +266,37 @@ describe("NotesView", () => {
 
     await waitFor(() => expect(getAudio).toHaveBeenCalledWith("1"));
     expect(container.querySelector("audio")).toBeInTheDocument();
+  });
+
+  it("shows an audio error with a working retry instead of loading forever", async () => {
+    list.mockResolvedValue([note({ body: "", kind: "audio", audioPath: "1.webm" })]);
+    getAudio.mockRejectedValueOnce(new Error("missing blob")).mockResolvedValueOnce("ZmFrZS1hdWRpbw==");
+    const user = userEvent.setup();
+    const { container } = render(<NotesView />);
+
+    const retry = await screen.findByTitle("Повторить загрузку аудио");
+    await user.click(retry);
+
+    await waitFor(() => expect(getAudio).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(container.querySelector("audio")).toBeInTheDocument());
+  });
+
+  it("stops showing audio loading when the native request hangs", async () => {
+    vi.useFakeTimers();
+    list.mockResolvedValue([note({ body: "", kind: "audio", audioPath: "1.webm" })]);
+    getAudio.mockReturnValue(new Promise(() => {}));
+    render(<NotesView />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(screen.getByTitle("Повторить загрузку аудио")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("shows an error when the microphone is unavailable", async () => {

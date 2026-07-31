@@ -10,6 +10,7 @@ pub struct PlanItemDto {
     pub status: String,
     pub progress_percent: Option<i64>,
     pub plan_date: String,
+    pub is_long_running: bool,
 }
 
 fn row_to_dto(row: &Row) -> rusqlite::Result<PlanItemDto> {
@@ -19,15 +20,16 @@ fn row_to_dto(row: &Row) -> rusqlite::Result<PlanItemDto> {
         status: row.get(2)?,
         progress_percent: row.get(3)?,
         plan_date: row.get(4)?,
+        is_long_running: row.get(5)?,
     })
 }
 
 pub fn list(conn: &Connection, plan_date: &str) -> rusqlite::Result<Vec<PlanItemDto>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, status, progress_percent, plan_date
+        "SELECT id, title, status, progress_percent, plan_date, is_long_running
          FROM plan_items
-         WHERE plan_date = ?1
-         ORDER BY created_at",
+         WHERE plan_date = ?1 OR is_long_running = 1
+         ORDER BY is_long_running DESC, created_at",
     )?;
     let items = stmt
         .query_map(params![plan_date], row_to_dto)?
@@ -41,7 +43,7 @@ pub fn list_range(
     end_date: &str,
 ) -> rusqlite::Result<Vec<PlanItemDto>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, status, progress_percent, plan_date
+        "SELECT id, title, status, progress_percent, plan_date, is_long_running
          FROM plan_items
          WHERE plan_date >= ?1 AND plan_date <= ?2
          ORDER BY plan_date, created_at",
@@ -78,7 +80,8 @@ pub fn create(
             "title": title,
             "status": "open",
             "progressPercent": null,
-            "planDate": plan_date
+            "planDate": plan_date,
+            "isLongRunning": false
         }),
     )?;
     tx.commit()?;
@@ -88,15 +91,48 @@ pub fn create(
         status: "open".to_string(),
         progress_percent: None,
         plan_date: plan_date.to_string(),
+        is_long_running: false,
     })
 }
 
 fn fetch(conn: &Connection, id: &str) -> rusqlite::Result<PlanItemDto> {
     conn.query_row(
-        "SELECT id, title, status, progress_percent, plan_date FROM plan_items WHERE id = ?1",
+        "SELECT id, title, status, progress_percent, plan_date, is_long_running
+         FROM plan_items WHERE id = ?1",
         params![id],
         row_to_dto,
     )
+}
+
+pub fn toggle_long_running(
+    conn: &mut Connection,
+    clock: &mut HlcClock,
+    profile_id: &str,
+    id: &str,
+) -> rusqlite::Result<PlanItemDto> {
+    let tx = conn.transaction()?;
+    let current: bool = tx.query_row(
+        "SELECT is_long_running FROM plan_items WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "UPDATE plan_items SET is_long_running = ?1 WHERE id = ?2",
+        params![!current, id],
+    )?;
+    let hlc = clock.next(&tx)?;
+    sync_log::record_operation(
+        &tx,
+        &hlc,
+        profile_id,
+        "plan_item",
+        id,
+        "update",
+        &serde_json::json!({ "isLongRunning": !current }),
+    )?;
+    let dto = fetch(&tx, id)?;
+    tx.commit()?;
+    Ok(dto)
 }
 
 pub fn toggle_done(
@@ -240,7 +276,7 @@ pub fn roll_over_pending(
     let ids = {
         let mut stmt = tx.prepare(
             "SELECT id FROM plan_items
-             WHERE plan_date < ?1 AND status != 'done'
+             WHERE plan_date < ?1 AND status != 'done' AND is_long_running = 0
              ORDER BY plan_date, created_at",
         )?;
         let rows = stmt
@@ -311,6 +347,7 @@ mod tests {
                 status TEXT NOT NULL,
                 progress_percent INTEGER,
                 plan_date TEXT NOT NULL,
+                is_long_running INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )",
             [],
@@ -414,7 +451,8 @@ mod tests {
         conn.execute(
             "CREATE TABLE plan_items (
                 id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
-                progress_percent INTEGER, plan_date TEXT NOT NULL, created_at TEXT NOT NULL
+                progress_percent INTEGER, plan_date TEXT NOT NULL,
+                is_long_running INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
             )",
             [],
         )
@@ -508,6 +546,36 @@ mod tests {
     }
 
     #[test]
+    fn long_running_item_is_visible_on_every_day_and_logs_the_flag() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        create(&mut conn, &mut clock, PROFILE, "Regular", TODAY).unwrap();
+        let item = create(&mut conn, &mut clock, PROFILE, "Several days", TODAY).unwrap();
+
+        let long_running = toggle_long_running(&mut conn, &mut clock, PROFILE, &item.id).unwrap();
+
+        assert!(long_running.is_long_running);
+        assert_eq!(list(&conn, TODAY).unwrap()[0].id, item.id);
+        assert_eq!(list(&conn, TOMORROW).unwrap()[0].id, item.id);
+        let patch: String = conn
+            .query_row(
+                "SELECT patch FROM sync_operations
+                 WHERE entity_id = ?1 ORDER BY hlc DESC LIMIT 1",
+                params![item.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&patch).unwrap()["isLongRunning"],
+            true
+        );
+
+        let regular = toggle_long_running(&mut conn, &mut clock, PROFILE, &item.id).unwrap();
+        assert!(!regular.is_long_running);
+        assert!(list(&conn, TOMORROW).unwrap().is_empty());
+    }
+
+    #[test]
     fn move_to_date_updates_date_and_logs_patch() {
         let mut conn = setup_conn();
         let mut clock = test_clock();
@@ -541,6 +609,22 @@ mod tests {
         assert_eq!(moved, 1);
         assert_eq!(fetch(&conn, &open.id).unwrap().plan_date, TOMORROW);
         assert_eq!(fetch(&conn, &done.id).unwrap().plan_date, TODAY);
+    }
+
+    #[test]
+    fn roll_over_skips_global_long_running_items() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        let item = create(&mut conn, &mut clock, PROFILE, "Several days", TODAY).unwrap();
+        toggle_long_running(&mut conn, &mut clock, PROFILE, &item.id).unwrap();
+
+        let moved_count = roll_over_pending(&mut conn, &mut clock, PROFILE, TOMORROW).unwrap();
+
+        let moved = fetch(&conn, &item.id).unwrap();
+        assert_eq!(moved_count, 0);
+        assert_eq!(moved.plan_date, TODAY);
+        assert!(moved.is_long_running);
+        assert_eq!(list(&conn, TOMORROW).unwrap()[0].id, item.id);
     }
 
     #[test]

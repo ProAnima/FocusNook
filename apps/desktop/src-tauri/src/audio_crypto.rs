@@ -1,6 +1,9 @@
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use sha2::{Digest, Sha256};
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 // Метка формата на диске: без неё нельзя отличить новый зашифрованный файл
 // от .webm, записанного до этого фикса (раздел P1 ревью — аудио раньше
@@ -62,6 +65,60 @@ pub fn decrypt_if_needed(vault_key_hex: &str, data: &[u8]) -> Result<Vec<u8>, St
         .map_err(|_| "не удалось расшифровать аудиозапись".to_string())
 }
 
+pub fn read_and_migrate(path: &Path, vault_key_hex: &str) -> Result<Vec<u8>, String> {
+    recover_pending_encrypted_file(path, vault_key_hex)?;
+    let raw = fs::read(path).map_err(|e| e.to_string())?;
+    if raw.starts_with(MAGIC) {
+        return decrypt_if_needed(vault_key_hex, &raw);
+    }
+
+    let encrypted = encrypt(vault_key_hex, &raw)?;
+    replace_with_encrypted_file(path, &encrypted, vault_key_hex)?;
+    Ok(raw)
+}
+
+fn pending_path(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.focusnook-encrypted.tmp", path.display()))
+}
+
+fn recover_pending_encrypted_file(path: &Path, vault_key_hex: &str) -> Result<(), String> {
+    let pending = pending_path(path);
+    if !pending.exists() {
+        return Ok(());
+    }
+    let pending_bytes = fs::read(&pending).map_err(|e| e.to_string())?;
+    if !pending_bytes.starts_with(MAGIC) {
+        return Err("pending audio migration is not encrypted".to_string());
+    }
+    decrypt_if_needed(vault_key_hex, &pending_bytes)?;
+    if path.exists() {
+        let current = fs::read(path).map_err(|e| e.to_string())?;
+        if current.starts_with(MAGIC) {
+            fs::remove_file(&pending).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    fs::rename(&pending, path).map_err(|e| e.to_string())
+}
+
+fn replace_with_encrypted_file(
+    path: &Path,
+    encrypted: &[u8],
+    vault_key_hex: &str,
+) -> Result<(), String> {
+    let pending = pending_path(path);
+    let mut file = fs::File::create(&pending).map_err(|e| e.to_string())?;
+    file.write_all(encrypted).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    drop(file);
+
+    let verification = fs::read(&pending).map_err(|e| e.to_string())?;
+    decrypt_if_needed(vault_key_hex, &verification)?;
+    fs::remove_file(path).map_err(|e| e.to_string())?;
+    fs::rename(&pending, path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -111,5 +168,43 @@ mod tests {
             a, b,
             "одинаковый plaintext не должен давать одинаковый шифртекст"
         );
+    }
+
+    #[test]
+    fn legacy_plaintext_file_is_migrated_in_place_after_read() {
+        let path = std::env::temp_dir().join(format!(
+            "focusnook-audio-migration-{}.webm",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(&path, b"legacy voice bytes").unwrap();
+
+        let plaintext = read_and_migrate(&path, "vault-key").unwrap();
+        let stored = fs::read(&path).unwrap();
+
+        assert_eq!(plaintext, b"legacy voice bytes");
+        assert!(stored.starts_with(MAGIC));
+        assert_eq!(
+            decrypt_if_needed("vault-key", &stored).unwrap(),
+            b"legacy voice bytes"
+        );
+        assert!(!pending_path(&path).exists());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn interrupted_migration_recovers_the_verified_encrypted_sidecar() {
+        let path = std::env::temp_dir().join(format!(
+            "focusnook-audio-recovery-{}.webm",
+            uuid::Uuid::new_v4()
+        ));
+        let pending = pending_path(&path);
+        fs::write(&pending, encrypt("vault-key", b"recovered voice").unwrap()).unwrap();
+
+        let plaintext = read_and_migrate(&path, "vault-key").unwrap();
+
+        assert_eq!(plaintext, b"recovered voice");
+        assert!(path.exists());
+        assert!(!pending.exists());
+        fs::remove_file(path).unwrap();
     }
 }

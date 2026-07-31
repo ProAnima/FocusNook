@@ -1,21 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  CalendarClock,
   CalendarDays,
-  CalendarPlus,
-  Check,
   ChevronLeft,
   ChevronRight,
-  ListChecks,
-  Percent,
   Plus,
-  Trash2,
 } from "lucide-react";
 import { usePlanItems } from "../shared/usePlanItems";
 import { commands, type PlanItem } from "../shared/commands";
 import { useLocale } from "../shared/useLocale";
 import { useReminders } from "../shared/useReminders";
-import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import {
   addDays,
   formatDayLabel,
@@ -24,18 +17,9 @@ import {
   todayDateKey,
 } from "../shared/dateKeys";
 import { buildCalendarMarks } from "../shared/calendarMarks";
-import { EmptyState } from "./EmptyState";
 import { CalendarPopover } from "./CalendarPopover";
 import { PlanItemDetailsDialog } from "./PlanItemDetailsDialog";
-
-interface PlanItemActions {
-  onOpenDetails: (item: PlanItem) => void;
-  onToggleDone: (id: string) => void;
-  onCycleProgress: (id: string) => void;
-  onToggleDeferred: (id: string) => void;
-  onMoveNextDay: (id: string) => void;
-  onDelete: (id: string) => void;
-}
+import { PlanItemList, type PlanItemActions } from "./PlanItemList";
 
 function useCalendarItems(monthKey: string) {
   const [items, setItems] = useState<PlanItem[]>([]);
@@ -49,112 +33,6 @@ function useCalendarItems(monthKey: string) {
   }, [monthKey]);
 
   return items;
-}
-
-function PlanItemActionsRow({
-  item,
-  actions,
-  deleteButtonProps,
-}: {
-  item: PlanItem;
-  actions: PlanItemActions;
-  deleteButtonProps: ReturnType<typeof useHoldToConfirm>["buttonProps"];
-}) {
-  const { t } = useLocale();
-  return (
-    <div className="plan-item-actions">
-      {item.status !== "partial" && (
-        <button
-          className="icon-button"
-          type="button"
-          onClick={() => actions.onCycleProgress(item.id)}
-          title={t("day.partial")}
-          aria-label={t("day.partial")}
-        >
-          <Percent size={13} />
-        </button>
-      )}
-      <button
-        className={`icon-button ${item.status === "deferred" ? "is-active" : ""}`}
-        type="button"
-        onClick={() => actions.onToggleDeferred(item.id)}
-        title={item.status === "deferred" ? t("day.resume") : t("day.defer")}
-        aria-label={item.status === "deferred" ? t("day.resume") : t("day.defer")}
-      >
-        <CalendarClock size={13} />
-      </button>
-      {item.status !== "done" && (
-        <button
-          className="icon-button"
-          type="button"
-          onClick={() => actions.onMoveNextDay(item.id)}
-          title={t("day.moveNext")}
-          aria-label={t("day.moveNext")}
-        >
-          <CalendarPlus size={13} />
-        </button>
-      )}
-      <button
-        className="icon-button hold-delete-button"
-        type="button"
-        title={t("common.delete")}
-        aria-label={t("common.delete")}
-        {...deleteButtonProps}
-      >
-        <Trash2 size={13} />
-      </button>
-    </div>
-  );
-}
-
-function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
-  const { t } = useLocale();
-  const deleteHold = useHoldToConfirm(() => actions.onDelete(item.id));
-  return (
-    <li className={`plan-item status-${item.status} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
-      <button
-        className="plan-checkbox"
-        type="button"
-        onClick={() => actions.onToggleDone(item.id)}
-        aria-label={item.status === "done" ? t("day.markUndone") : t("day.markDone")}
-      >
-        {item.status === "done" && <Check size={12} />}
-      </button>
-      <button
-        className="plan-title"
-        type="button"
-        onClick={() => actions.onOpenDetails(item)}
-        aria-label={item.title}
-      >
-        {item.title}
-      </button>
-      {item.status === "partial" && (
-        <button
-          className="plan-progress"
-          type="button"
-          onClick={() => actions.onCycleProgress(item.id)}
-          title={t("day.changeProgress")}
-        >
-          {item.progressPercent}%
-        </button>
-      )}
-      <PlanItemActionsRow item={item} actions={actions} deleteButtonProps={deleteHold.buttonProps} />
-    </li>
-  );
-}
-
-function PlanList({ loaded, items, actions }: { loaded: boolean; items: PlanItem[]; actions: PlanItemActions }) {
-  const { t } = useLocale();
-  if (loaded && items.length === 0) {
-    return <EmptyState icon={ListChecks} text={t("day.empty")} />;
-  }
-  return (
-    <ul className="plan-list">
-      {items.map((item) => (
-        <PlanItemRow key={item.id} item={item} actions={actions} />
-      ))}
-    </ul>
-  );
 }
 
 function DayHeader({
@@ -210,7 +88,8 @@ export function DayView() {
   const calendarItems = useCalendarItems(calendarMonth);
   const calendarMarks = useMemo(() => buildCalendarMarks(calendarItems, reminders), [calendarItems, reminders]);
   const [draft, setDraft] = useState("");
-  const doneCount = plan.items.filter((item) => item.status === "done").length;
+  const dailyItems = plan.items.filter((item) => !item.isLongRunning);
+  const doneCount = dailyItems.filter((item) => item.status === "done").length;
 
   function changeDate(dateKey: string) {
     setSelectedDate(dateKey);
@@ -222,6 +101,7 @@ export function DayView() {
     onToggleDone: plan.toggleDone,
     onCycleProgress: plan.cycleProgress,
     onToggleDeferred: plan.toggleDeferred,
+    onToggleLongRunning: plan.toggleLongRunning,
     onMoveNextDay: (id) => void plan.moveToDate(id, addDays(selectedDate, 1)),
     onDelete: plan.deleteItem,
   };
@@ -240,7 +120,7 @@ export function DayView() {
       <DayHeader
         selectedDate={selectedDate}
         doneCount={doneCount}
-        total={plan.items.length}
+        total={dailyItems.length}
         onChangeDate={changeDate}
         onOpenCalendar={() => setCalendarOpen((value) => !value)}
       />
@@ -257,9 +137,25 @@ export function DayView() {
           onClose={() => setCalendarOpen(false)}
         />
       )}
-      <PlanList loaded={plan.loaded} items={plan.items} actions={actions} />
+      <PlanItemList loaded={plan.loaded} items={plan.items} actions={actions} />
       {detailsItem && (
-        <PlanItemDetailsDialog item={detailsItem} onClose={() => setDetailsItem(null)} />
+        <PlanItemDetailsDialog
+          item={plan.items.find((item) => item.id === detailsItem.id) ?? detailsItem}
+          onToggleLongRunning={() => {
+            void plan.toggleLongRunning(detailsItem.id).then((updated) => {
+              if (updated && !updated.isLongRunning && updated.planDate !== selectedDate) {
+                setDetailsItem(null);
+              }
+            });
+          }}
+          onCycleProgress={() => void plan.cycleProgress(detailsItem.id)}
+          onToggleDeferred={() => void plan.toggleDeferred(detailsItem.id)}
+          onDelete={() => {
+            void plan.deleteItem(detailsItem.id);
+            setDetailsItem(null);
+          }}
+          onClose={() => setDetailsItem(null)}
+        />
       )}
 
       <form className="quick-add" onSubmit={handleSubmit}>

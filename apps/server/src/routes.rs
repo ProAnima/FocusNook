@@ -572,17 +572,16 @@ async fn upload_blob(
 ) -> AppResult<Json<UploadBlobResponse>> {
     let auth = require_device(&headers, &state).await?;
     validate_id(&request.profile_id, "profileId", 160)?;
-    validate_id(&request.blob_id, "blobId", 240)?;
+    validate_blob_id(&request.blob_id)?;
     validate_label(&request.content_type, "contentType", 120)?;
-    validate_id(&request.sha256, "sha256", 128)?;
     let content_type = request.content_type.trim();
-    let sha256 = request.sha256.trim();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(request.bytes_base64.trim())
         .map_err(|_| AppError::BadRequest("bytesBase64 must be base64".to_string()))?;
     if bytes.len() > state.config.max_blob_bytes {
         return Err(AppError::BadRequest("blob is too large".to_string()));
     }
+    let sha256 = validate_blob_sha256(&request.sha256, &bytes)?;
     let encrypted = state.crypto.encrypt(&bytes)?;
     let canonical_profile_id = canonical_profile_id(auth.user_id);
 
@@ -596,7 +595,7 @@ async fn upload_blob(
     .bind(&canonical_profile_id)
     .bind(&request.blob_id)
     .bind(content_type)
-    .bind(sha256)
+    .bind(&sha256)
     .bind(bytes.len() as i64)
     .bind(&encrypted.ciphertext)
     .bind(&encrypted.nonce)
@@ -609,7 +608,7 @@ async fn upload_blob(
             &canonical_profile_id,
             &request.blob_id,
             content_type,
-            sha256,
+            &sha256,
             bytes.len() as i64,
         )
         .await?;
@@ -630,7 +629,7 @@ async fn download_blob(
 ) -> AppResult<Json<DownloadBlobResponse>> {
     let auth = require_device(&headers, &state).await?;
     validate_id(&profile_id, "profileId", 160)?;
-    validate_id(&blob_id, "blobId", 240)?;
+    validate_blob_id(&blob_id)?;
     let row = sqlx::query_as::<_, DbBlob>(
         "SELECT blob_id, content_type, sha256, size_bytes, bytes_enc, server_nonce
          FROM sync_blobs
@@ -941,6 +940,32 @@ fn hash_optional_part(hasher: &mut Sha256, value: Option<&str>) {
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn validate_blob_sha256(claimed: &str, bytes: &[u8]) -> AppResult<String> {
+    let claimed = claimed.trim();
+    if claimed.len() != 64
+        || !claimed
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(AppError::BadRequest("sha256 is invalid".to_string()));
+    }
+    let computed = hex_encode(&Sha256::digest(bytes));
+    if claimed != computed {
+        return Err(AppError::BadRequest(
+            "sha256 does not match uploaded bytes".to_string(),
+        ));
+    }
+    Ok(computed)
+}
+
+fn validate_blob_id(value: &str) -> AppResult<()> {
+    validate_id(value, "blobId", 240)?;
+    if value == "." || value == ".." || value.contains('/') || value.contains('\\') {
+        return Err(AppError::BadRequest("blobId is invalid".to_string()));
+    }
+    Ok(())
 }
 
 fn validate_id(value: &str, field: &str, max_len: usize) -> AppResult<()> {
@@ -1298,6 +1323,23 @@ mod tests {
     fn rejects_whitespace_in_identifiers() {
         assert!(validate_id("abc def", "field", 20).is_err());
         assert!(validate_id("abcdef", "field", 20).is_ok());
+    }
+
+    #[test]
+    fn validates_uploaded_blob_digest_against_actual_bytes() {
+        let bytes = b"encrypted cross-device audio";
+        let digest = hex_encode(&Sha256::digest(bytes));
+
+        assert_eq!(validate_blob_sha256(&digest, bytes).unwrap(), digest);
+        assert!(validate_blob_sha256(&"0".repeat(64), bytes).is_err());
+        assert!(validate_blob_sha256("ABC", bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_blob_ids_that_can_escape_the_audio_directory() {
+        assert!(validate_blob_id("voice.webm").is_ok());
+        assert!(validate_blob_id("../voice.webm").is_err());
+        assert!(validate_blob_id(r"..\voice.webm").is_err());
     }
 
     #[test]

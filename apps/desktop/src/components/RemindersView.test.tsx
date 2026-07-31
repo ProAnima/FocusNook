@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RemindersView } from "./RemindersView";
 
-const { list, create, createAudio, deleteReminder, onChanged, startRecording, stopRecording } = vi.hoisted(() => ({
+const { list, create, createAudio, getAudio, deleteReminder, onChanged, startRecording, stopRecording } = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   createAudio: vi.fn(),
+  getAudio: vi.fn(),
   deleteReminder: vi.fn(),
   onChanged: vi.fn().mockResolvedValue(() => {}),
   startRecording: vi.fn(),
@@ -15,7 +16,7 @@ const { list, create, createAudio, deleteReminder, onChanged, startRecording, st
 
 vi.mock("../shared/commands", () => ({
   commands: {
-    reminders: { list, create, createAudio, delete: deleteReminder, onChanged },
+    reminders: { list, create, createAudio, getAudio, delete: deleteReminder, onChanged },
     serverSync: { onCompleted: vi.fn().mockResolvedValue(() => {}) },
   },
 }));
@@ -60,6 +61,46 @@ describe("RemindersView", () => {
     render(<RemindersView />);
 
     expect(await screen.findByText("Проверить рендер")).toBeInTheDocument();
+  });
+
+  it("omits zero minutes from an exact-hour countdown", async () => {
+    const now = new Date("2026-07-26T10:00:00.000Z");
+    vi.setSystemTime(now);
+    list.mockResolvedValue([{
+      id: "hour",
+      title: "Ровно через час",
+      audioPath: null,
+      triggerAtUtc: new Date(now.getTime() + 60 * 60_000).toISOString(),
+      status: "scheduled",
+    }]);
+    render(<RemindersView />);
+
+    expect(await screen.findByText("через 1 ч")).toBeInTheDocument();
+    expect(screen.queryByText("через 1 ч 0 мин")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("opens full reminder text and loads voice audio in the shared dialog", async () => {
+    const title = "Длинный текст голосового напоминания без обрезания";
+    list.mockResolvedValue([{
+      id: "voice",
+      title,
+      audioPath: "voice.webm",
+      triggerAtUtc: "2030-01-01T10:00:00.000Z",
+      status: "scheduled",
+    }]);
+    getAudio.mockResolvedValue("ZmFrZS1hdWRpbw==");
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(<RemindersView />);
+
+    await user.click(await screen.findByRole("button", { name: title }));
+
+    expect(screen.getByRole("dialog", { name: title })).toHaveTextContent(title);
+    expect(await within(screen.getByRole("dialog", { name: title })).findByText("Голосовая заметка")).toBeInTheDocument();
+    await waitFor(() => expect(getAudio).toHaveBeenCalledWith("voice"));
+    expect(container.querySelector("audio")).toBeInTheDocument();
   });
 
   it("disables presets until a title is entered, then creates a reminder", async () => {

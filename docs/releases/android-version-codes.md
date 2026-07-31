@@ -14,6 +14,11 @@ version as `major * 1_000_000 + minor * 1_000 + patch`.
 | 0.1.5 | 1005 | anchored resize grip and in-card task details candidate | not uploaded | not uploaded | debug build only |
 | 0.1.6 | 1006 | sync recovery and update data-preservation candidate | not uploaded | not uploaded | debug build only |
 | 0.1.7 | 1007 | Android plaintext vault to SQLCipher migration hotfix | not uploaded | not uploaded | debug build only |
+| 0.1.8 | 1008 | long-running tasks and hardened cross-device audio sync candidate; debug APK built, store AAB awaits permanent key | not uploaded | not uploaded | debug build only |
+| 0.1.9 | 1009 | missing-audio isolation and stalled sync cursor recovery candidate | not uploaded | not uploaded | debug build only |
+| 0.1.10 | 1010 | independent generic attachment outbox/inbox candidate | not uploaded | not uploaded | debug build only |
+| 0.1.11 | 1011 | native window bounds and edge snapping fix | not uploaded | not uploaded | desktop build only |
+| 0.1.12 | 1012 | compact desktop window minimum size | not uploaded | not uploaded | desktop build only |
 
 Before each upload, record the artifact SHA-256 and store submission id in the
 release evidence file created from `docs/releases/release-evidence-template.md`.

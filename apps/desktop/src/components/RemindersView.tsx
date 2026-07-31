@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { BellRing, CalendarDays, ChevronDown, ChevronUp, Mic, Plus, Square, Trash2, Volume2, X } from "lucide-react";
 import { useReminders } from "../shared/useReminders";
 import { getReminderPresets, formatReminderTime } from "../shared/reminderPresets";
-import type { Reminder } from "../shared/commands";
+import { commands, type Reminder } from "../shared/commands";
 import { useAudioRecorder } from "../shared/useAudioRecorder";
 import { dateKeyFromDate, formatDayLabel, monthKeyFromDateKey, parseDateKey } from "../shared/dateKeys";
 import type { LocaleContextValue } from "../shared/locale-context";
@@ -10,7 +10,9 @@ import { useLocale } from "../shared/useLocale";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
 import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { CalendarPopover } from "./CalendarPopover";
+import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { EmptyState } from "./EmptyState";
+import { ItemDetailsDialog } from "./ItemDetailsDialog";
 
 function pad(value: number): string {
   return value.toString().padStart(2, "0");
@@ -44,6 +46,9 @@ function formatCountdown(triggerAtUtc: string, now: number, t: LocaleContextValu
   }
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
+  if (minutes === 0) {
+    return t("reminders.countdownHoursOnly").replace("{hours}", String(hours));
+  }
   return t("reminders.countdownHours")
     .replace("{hours}", String(hours))
     .replace("{minutes}", String(minutes));
@@ -85,13 +90,25 @@ function TimeStepper({
   );
 }
 
-function ReminderRow({ reminder, now, onDelete }: { reminder: Reminder; now: number; onDelete: (id: string) => void }) {
+function ReminderRow({
+  reminder,
+  now,
+  onDelete,
+  onOpenDetails,
+}: {
+  reminder: Reminder;
+  now: number;
+  onDelete: (id: string) => void;
+  onOpenDetails: (reminder: Reminder) => void;
+}) {
   const { t, locale } = useLocale();
   const deleteHold = useHoldToConfirm(() => onDelete(reminder.id));
   return (
     <li className={`reminder-item ${reminder.audioPath ? "is-audio" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
       <span className="reminder-kind">{reminder.audioPath ? <Volume2 size={13} /> : <BellRing size={13} />}</span>
-      <span className="reminder-title">{reminder.title}</span>
+      <button className="reminder-title" type="button" onClick={() => onOpenDetails(reminder)}>
+        {reminder.title}
+      </button>
       <span className="reminder-time-block">
         <span className="reminder-time">{formatReminderTime(reminder.triggerAtUtc, locale)}</span>
         <span className="reminder-countdown">{formatCountdown(reminder.triggerAtUtc, now, t)}</span>
@@ -291,7 +308,8 @@ function ReminderComposer({
 export function RemindersView() {
   const { reminders, loaded, addReminder, addAudioReminder, deleteReminder } = useReminders();
   const [now, setNow] = useState(0);
-  const { t } = useLocale();
+  const [detailsReminder, setDetailsReminder] = useState<Reminder | null>(null);
+  const { t, locale } = useLocale();
 
   useEffect(() => {
     const firstTick = window.setTimeout(() => setNow(Date.now()), 0);
@@ -309,7 +327,13 @@ export function RemindersView() {
       ) : (
         <ul className="reminder-list">
           {reminders.map((reminder) => (
-            <ReminderRow key={reminder.id} reminder={reminder} now={now} onDelete={deleteReminder} />
+            <ReminderRow
+              key={reminder.id}
+              reminder={reminder}
+              now={now}
+              onDelete={deleteReminder}
+              onOpenDetails={setDetailsReminder}
+            />
           ))}
         </ul>
       )}
@@ -318,6 +342,16 @@ export function RemindersView() {
         onCreate={(title, triggerAtUtc) => void addReminder(title, triggerAtUtc)}
         onCreateAudio={(title, triggerAtUtc, audioBase64) => void addAudioReminder(title, triggerAtUtc, audioBase64)}
       />
+
+      {detailsReminder && (
+        <ItemDetailsDialog ariaLabel={detailsReminder.title} onClose={() => setDetailsReminder(null)}>
+          <p>{detailsReminder.title}</p>
+          <p className="item-details-meta">{formatReminderTime(detailsReminder.triggerAtUtc, locale)}</p>
+          {detailsReminder.audioPath && (
+            <AudioMessagePlayer audioId={detailsReminder.id} loadAudio={commands.reminders.getAudio} />
+          )}
+        </ItemDetailsDialog>
+      )}
     </div>
   );
 }

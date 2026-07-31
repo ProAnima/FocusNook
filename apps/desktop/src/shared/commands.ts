@@ -61,6 +61,7 @@ export interface PlanItem {
   status: PlanItemStatus;
   progressPercent: number | null;
   planDate: string;
+  isLongRunning: boolean;
 }
 
 export interface Note {
@@ -212,8 +213,8 @@ export const commands = {
       const size = await win.innerSize();
       const scale = await win.scaleFactor();
       const logical = size.toLogical(scale);
-      const width = Math.min(900, Math.max(648, logical.width + widthDelta));
-      const height = Math.min(1200, Math.max(392, logical.height + heightDelta));
+      const width = Math.min(520, Math.max(280, logical.width + widthDelta));
+      const height = Math.min(1200, Math.max(260, logical.height + heightDelta));
       await win.setSize(new LogicalSize(width, height));
     },
   },
@@ -246,6 +247,9 @@ export const commands = {
     },
     async toggleDeferred(id: string): Promise<PlanItem> {
       return invoke<PlanItem>("toggle_plan_item_deferred", { id });
+    },
+    async toggleLongRunning(id: string): Promise<PlanItem> {
+      return invoke<PlanItem>("toggle_plan_item_long_running", { id });
     },
     async moveToDate(id: string, planDate: string): Promise<PlanItem> {
       return invoke<PlanItem>("move_plan_item_to_date", { id, planDate });

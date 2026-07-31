@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { DayView } from "./DayView";
 
-const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, deletePlanItem, listReminders, onRemindersChanged } =
+const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, toggleLongRunning, moveToDate, rollOverPending, deletePlanItem, listReminders, onRemindersChanged } =
   vi.hoisted(() => ({
     list: vi.fn(),
     listRange: vi.fn(),
@@ -11,6 +11,7 @@ const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, move
     toggleDone: vi.fn(),
     cycleProgress: vi.fn(),
     toggleDeferred: vi.fn(),
+    toggleLongRunning: vi.fn(),
     moveToDate: vi.fn(),
     rollOverPending: vi.fn(),
     deletePlanItem: vi.fn(),
@@ -20,7 +21,7 @@ const { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, move
 
 vi.mock("../shared/commands", () => ({
   commands: {
-    planItems: { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, moveToDate, rollOverPending, delete: deletePlanItem },
+    planItems: { list, listRange, create, toggleDone, cycleProgress, toggleDeferred, toggleLongRunning, moveToDate, rollOverPending, delete: deletePlanItem },
     reminders: { list: listReminders, onChanged: onRemindersChanged },
     serverSync: { onCompleted: vi.fn().mockResolvedValue(() => {}) },
   },
@@ -33,6 +34,7 @@ function item(overrides = {}) {
     status: "open",
     progressPercent: null,
     planDate: "2026-07-06",
+    isLongRunning: false,
     ...overrides,
   };
 }
@@ -137,6 +139,89 @@ describe("DayView", () => {
 
     expect(toggleDeferred).toHaveBeenCalledWith("1");
     expect(await screen.findByTitle("Вернуть в работу")).toBeInTheDocument();
+  });
+
+  it("moves a marked task into the long-running group at the top", async () => {
+    list.mockResolvedValue([
+      item({ id: "1", title: "Обычная" }),
+      item({ id: "2", title: "На несколько дней" }),
+    ]);
+    toggleLongRunning.mockResolvedValue(
+      item({ id: "1", title: "Обычная", isLongRunning: true }),
+    );
+    const user = userEvent.setup();
+    const { container } = render(<DayView />);
+
+    await user.click((await screen.findAllByTitle("Сделать протяжённой"))[0]);
+
+    expect(toggleLongRunning).toHaveBeenCalledWith("1");
+    const group = await screen.findByRole("region", { name: "Протяжённые" });
+    expect(within(group).getByText("Обычная")).toBeInTheDocument();
+    expect(container.querySelector(".plan-groups")?.firstElementChild).toBe(group);
+  });
+
+  it("shows a long-running task on every selected day without counting it as a daily task", async () => {
+    let initialDate = "";
+    list.mockImplementation((date: string) => {
+      if (!initialDate) initialDate = date;
+      return Promise.resolve(
+        date === initialDate
+          ? [
+              item({ id: "global", title: "Большой проект", planDate: "2026-06-01", isLongRunning: true }),
+              item({ id: "daily", title: "Дело дня", planDate: date }),
+            ]
+          : [item({ id: "global", title: "Большой проект", planDate: "2026-06-01", isLongRunning: true })],
+      );
+    });
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    const group = await screen.findByRole("region", { name: "Протяжённые" });
+    expect(within(group).getByText("Большой проект")).toBeInTheDocument();
+    expect(screen.getByText("0/1")).toBeInTheDocument();
+    expect(within(group).queryByTitle("Перенести на следующий день")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Следующий день"));
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Большой проект")).toBeInTheDocument();
+    expect(screen.queryByText("Дело дня")).not.toBeInTheDocument();
+    expect(screen.getByText("0/0")).toBeInTheDocument();
+  });
+
+  it("removes a global task from a day when its long-running marker is cleared", async () => {
+    list.mockResolvedValue([
+      item({ title: "Большой проект", planDate: "2026-06-01", isLongRunning: true }),
+    ]);
+    toggleLongRunning.mockResolvedValue(
+      item({ title: "Большой проект", planDate: "2026-06-01", isLongRunning: false }),
+    );
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByTitle("Убрать из протяжённых"));
+
+    expect(toggleLongRunning).toHaveBeenCalledWith("1");
+    expect(screen.queryByText("Большой проект")).not.toBeInTheDocument();
+  });
+
+  it("toggles long-running mode from task details for touch layouts", async () => {
+    list.mockResolvedValue([item({ title: "Большой проект" })]);
+    toggleLongRunning.mockResolvedValue(
+      item({ title: "Большой проект", isLongRunning: true }),
+    );
+    const user = userEvent.setup();
+    render(<DayView />);
+
+    await user.click(await screen.findByRole("button", { name: "Большой проект" }));
+    const dialog = screen.getByRole("dialog", { name: "Большой проект" });
+    await user.click(within(dialog).getByRole("button", { name: /Сделать протяжённой/ }));
+
+    expect(toggleLongRunning).toHaveBeenCalledWith("1");
+    expect(await within(dialog).findByRole("button", { name: /Протяжённая задача/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("moves an unfinished item to the next day", async () => {

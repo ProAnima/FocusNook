@@ -1,42 +1,77 @@
-import { useEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { CalendarClock, CalendarRange, Percent, Trash2 } from "lucide-react";
 import type { PlanItem } from "../shared/commands";
+import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { useLocale } from "../shared/useLocale";
+import { ItemDetailsDialog } from "./ItemDetailsDialog";
 
-export function PlanItemDetailsDialog({ item, onClose }: { item: PlanItem; onClose: () => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+function PlanItemDetailsActions({
+  item,
+  onCycleProgress,
+  onToggleDeferred,
+  onDelete,
+}: {
+  item: PlanItem;
+  onCycleProgress: () => void;
+  onToggleDeferred: () => void;
+  onDelete: () => void;
+}) {
   const { t } = useLocale();
-
-  useEffect(() => {
-    closeRef.current?.focus();
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
+  const deleteHold = useHoldToConfirm(onDelete);
   return (
-    <div
-      className="plan-details-backdrop"
-      role="presentation"
-      onPointerDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
-      }}
-    >
-      <section className="plan-details-dialog" role="dialog" aria-modal="true" aria-label={item.title}>
-        <button
-          ref={closeRef}
-          className="icon-button plan-details-close"
-          type="button"
-          onClick={onClose}
-          title={t("header.close")}
-          aria-label={t("header.close")}
-        >
-          <X size={16} />
-        </button>
-        <p>{item.title}</p>
-      </section>
+    <div className="plan-details-actions">
+      <button type="button" onClick={onCycleProgress}>
+        <Percent size={15} />
+        {item.status === "partial" ? t("day.changeProgress") : t("day.partial")}
+      </button>
+      <button type="button" onClick={onToggleDeferred}>
+        <CalendarClock size={15} />
+        {item.status === "deferred" ? t("day.resume") : t("day.defer")}
+      </button>
+      <button className="hold-delete-button" type="button" aria-label={t("common.delete")} {...deleteHold.buttonProps}>
+        <Trash2 size={15} />
+        {t("common.delete")}
+      </button>
     </div>
+  );
+}
+
+export function PlanItemDetailsDialog({
+  item,
+  onToggleLongRunning,
+  onCycleProgress,
+  onToggleDeferred,
+  onDelete,
+  onClose,
+}: {
+  item: PlanItem;
+  onToggleLongRunning: () => void;
+  onCycleProgress: () => void;
+  onToggleDeferred: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <ItemDetailsDialog ariaLabel={item.title} onClose={onClose}>
+      <p>{item.title}</p>
+      <button
+        className={`plan-long-running-toggle ${item.isLongRunning ? "is-active" : ""}`}
+        type="button"
+        onClick={onToggleLongRunning}
+        aria-pressed={item.isLongRunning}
+      >
+        <CalendarRange size={17} />
+        <span>
+          <strong>{item.isLongRunning ? t("day.longRunningMarked") : t("day.longRunningAdd")}</strong>
+          <small>{t("day.longRunningDescription")}</small>
+        </span>
+      </button>
+      <PlanItemDetailsActions
+        item={item}
+        onCycleProgress={onCycleProgress}
+        onToggleDeferred={onToggleDeferred}
+        onDelete={onDelete}
+      />
+    </ItemDetailsDialog>
   );
 }

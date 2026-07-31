@@ -25,6 +25,8 @@ export function TabBar<K extends string>({
         <button
           key={key}
           className={`tab ${active === key ? "tab-active" : ""}`}
+          aria-label={label}
+          title={label}
           onClick={() => onSelect(key)}
         >
           <Icon size={iconSize} />

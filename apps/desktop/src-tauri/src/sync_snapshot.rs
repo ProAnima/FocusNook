@@ -70,7 +70,8 @@ fn collect_entities(tx: &Transaction) -> Result<Vec<SnapshotEntity>, String> {
 fn plan_items(tx: &Transaction) -> Result<Vec<SnapshotEntity>, String> {
     query_entities(
         tx,
-        "SELECT id, title, status, progress_percent, plan_date FROM plan_items",
+        "SELECT id, title, status, progress_percent, plan_date, is_long_running
+         FROM plan_items",
         "plan_item",
         |row| {
             Ok(json!({
@@ -78,6 +79,7 @@ fn plan_items(tx: &Transaction) -> Result<Vec<SnapshotEntity>, String> {
                 "status": row.get::<_, String>(2)?,
                 "progressPercent": row.get::<_, Option<i64>>(3)?,
                 "planDate": row.get::<_, String>(4)?,
+                "isLongRunning": row.get::<_, bool>(5)?,
             }))
         },
     )
@@ -166,6 +168,11 @@ mod tests {
         )
         .unwrap();
         conn.execute(
+            "UPDATE plan_items SET is_long_running = 1 WHERE id = 'task-1'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO reminders
              (id, title, audio_path, trigger_at_utc, status, created_at)
              VALUES ('reminder-1', 'Later', NULL, '2026-07-25T10:00:00.000Z', 'acknowledged',
@@ -192,6 +199,14 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+        let task_patch: String = conn
+            .query_row(
+                "SELECT patch FROM sync_operations WHERE entity_id = 'task-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(task_patch.contains("\"isLongRunning\":true"));
         let reminder_patch: String = conn
             .query_row(
                 "SELECT patch FROM sync_operations WHERE entity_id = 'reminder-1'",

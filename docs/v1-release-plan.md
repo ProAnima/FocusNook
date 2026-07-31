@@ -17,19 +17,19 @@ letting it drift the way the old Iteration 0-3 roadmap did.
    - approve the `/privacy` and `/terms` drafts with qualified legal review;
    - create the permanent upload key, make two encrypted backups, and record
      its certificate SHA-256. No release key is stored in this repository.
-2. **VDS server production rollout**, prepared but not applied without access:
+2. **VDS operational follow-ups** (hardened rollout completed 2026-07-26):
    - rotate `FOCUSNOOK_ADMIN_TOKEN` after bootstrap;
-   - confirm `.env` lives outside the repo and DB dumps are downloaded to the
-     operator's local backup storage instead of being retained on the VDS;
    - add an external uptime monitor for `/healthz` and `/readyz`;
-   - run `scripts/backup-vds-local.py`, `scripts/deploy-vds.sh --apply`, a real
-     restore drill, and record
-     public `/privacy` and `/terms` smoke evidence. The routes currently remain
-     absent from the live nginx until this rollout.
+   - retain the verified local backup and its manifest according to the
+     operator's retention policy. The production `.env` remains outside the
+     release tree and no database dump is retained on the VDS.
 3. **One recorded end-to-end desktop + Android sync pass** against the same
-   live VDS server. The sync engine is shared and unit-tested on both sides,
-   but this audit did not find a recorded manual pass proving a task created
-   on desktop reaches Android (and back) through a real deployed server.
+   live VDS server. The pass must prove tasks (including adding and removing
+   the long-running marker) and recorded audio in both directions, including
+   playback after a cold restart and a temporary network interruption. The
+   encrypted audio transform is covered by an automated two-device round-trip
+   test with distinct local vault keys, but there is still no recorded
+   physical-device pass through the deployed server.
 4. **Signed-build device and store acceptance**:
    - run the release preflight and test on a Huawei/HMS phone plus a RuStore
      representative phone, including reminder-after-reboot and account deletion;
@@ -66,6 +66,47 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   generated Xcode project).
 - `planner-core` / `planner-sync` / `planner-storage` crate extraction from
   `apps/desktop/src-tauri/src` into standalone crates.
+
+## Implemented, pending physical release acceptance (2026-07-26)
+
+- Tasks can be marked as long-running independently of their completion
+  status. Marked tasks are global: they appear in a compact group above every
+  daily list, do not inflate that day's completion counter, and are skipped by
+  daily rollover. Desktop keeps inline actions; Android moves secondary
+  actions into the touch-sized details dialog so task titles retain space.
+- The SQLite migration uses a safe `false` default for existing rows. The VDS
+  operation patch, remote apply path, and full snapshot all carry
+  `isLongRunning`; automated migration, rollover, snapshot, and remote-apply
+  tests pass.
+- Desktop and 390 px mobile React/CSS layouts were inspected in browser
+  preview, including accessible region/toggle semantics. A signed Android
+  build on a physical phone and the two-device live-VDS pass above remain
+  required before this item is considered release-accepted.
+- A reversible live-VDS protocol audit with separate desktop/Android device
+  tokens proved encrypted operation exchange, long-running marker updates,
+  duplicate idempotency, cross-device wakeups, encrypted audio upload/download,
+  and exact audio-byte recovery. The temporary account and its data were
+  deleted afterwards.
+- The hardened server image was deployed on 2026-07-26 after the verified
+  backup and restore drill. Independent live probes now receive `400 Bad
+  Request` for both a deliberately wrong blob SHA-256 and an unsafe `../` blob
+  id.
+- Production backup evidence (2026-07-26): `focusnook-20260726T111800Z.dump`,
+  500218 bytes, SHA-256
+  `88227e03c893269a9e439e02c767ec033519cadbab0606be12419e9d3ad6ae14`.
+  The local hash matches its manifest, the temporary VDS dump count is zero,
+  and an isolated PostgreSQL 16 restore recovered all 9 public tables with 20
+  validated key constraints, 0 invalid constraints, 171 operation rows, and 5
+  blob rows. The disposable restore container was removed.
+- Post-backup public smoke passed for health/readiness, legal pages, security
+  headers, HTTP-to-HTTPS redirect, nginx config, and both healthy application
+  containers. The origin TLS leaf certificate was valid with 70 days remaining.
+  After deployment, a repeated reversible two-device probe passed account
+  registration/login, encrypted task and long-running-marker transfer,
+  idempotency, cross-device wakeup, encrypted audio upload/download, checksum
+  verification, and exact decrypted WAV recovery. Both hardened blob
+  validations passed; cleanup left 0 audit accounts and 0 orphan
+  operation/blob rows.
 
 ## Shipped (verified 2026-07-16: lint/tsc/vitest/clippy/cargo test all green)
 
@@ -135,3 +176,31 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   ([routes.rs](../apps/server/src/routes.rs)), which could starve all
   request handling under concurrent login/registration load. Now wrapped in
   `tokio::task::spawn_blocking`.
+
+### Sync and audio hardening (2026-07-26)
+
+- Attachment integrity fails closed: checksum, decryption, and local
+  materialization failures never expose unverified bytes. The original coupling
+  between attachment availability and the operation cursor was superseded by
+  the independent-delivery design below.
+- Downloaded audio is checked for exact size, SHA-256, successful media-key
+  decryption, and exact local plaintext before an atomic replacement. A corrupt
+  local copy is repaired from the verified server copy.
+- Legacy plaintext audio is re-encrypted in place on first read/upload.
+  SQLCipher migration now verifies `integrity_check` and removes the plaintext
+  database backup after successful conversion.
+- The server recomputes uploaded blob SHA-256 instead of trusting the client,
+  and both client and server reject blob IDs capable of path traversal.
+- VDS requests now have explicit connect/request timeouts; blob transfers use a
+  separate three-minute budget suitable for mobile recordings.
+
+### Independent attachment delivery (2026-07-31)
+
+- The operation journal and attachment delivery now advance independently.
+  A missing remote attachment cannot hold the operation pull cursor.
+- The attachment outbox gates only operations that reference an attachment
+  without a server acknowledgement. Independent text and task operations continue.
+- Duplicate attachment upload passes were removed. One generic queue now serves
+  audio and the future `attachments` contract used by images and files.
+- The legacy `sync_blobs` table and VDS `/v1/blobs` API remain unchanged for
+  backwards compatibility; the client treats them as generic attachments.

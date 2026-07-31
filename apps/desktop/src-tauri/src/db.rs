@@ -13,6 +13,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     status TEXT NOT NULL,
     progress_percent INTEGER,
     plan_date TEXT NOT NULL,
+    is_long_running INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 )",
     "CREATE TABLE IF NOT EXISTS note_groups (
@@ -176,6 +177,22 @@ fn looks_like_plaintext_sqlite(path: &Path) -> bool {
     &header == SQLITE_PLAINTEXT_MAGIC
 }
 
+fn verify_encrypted_sqlite(path: &Path, key_hex: &str) -> Result<(), String> {
+    let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))
+        .map_err(|e| e.to_string())?;
+    let integrity: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    if integrity == "ok" {
+        Ok(())
+    } else {
+        Err(format!(
+            "encrypted vault integrity check failed: {integrity}"
+        ))
+    }
+}
+
 // P1 ревью + раздел 26 ТЗ: Iteration 0 (без шифрования) вышла раньше
 // Iteration 1 (шифрование) — установки с того периода имеют настоящий
 // plaintext vault.db. Открыть такой файл через голый PRAGMA key бессмысленно:
@@ -186,7 +203,7 @@ fn looks_like_plaintext_sqlite(path: &Path) -> bool {
 //
 // Оригинал не трогаем "на месте": переименовываем в .plaintext-backup ДО
 // конвертации, так что при сбое sqlcipher_export исходные данные остаются
-// целы и читаемы вручную, а не теряются между переименованием и записью.
+// целы. После проверки integrity_check plaintext-backup обязательно удаляется.
 // Если предыдущая попытка миграции упала между этими двумя шагами (path
 // уже нет, а .plaintext-backup ещё есть) — доводим её до конца с backup,
 // а не заводим на его месте пустой новый vault.
@@ -195,12 +212,31 @@ fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String>
 
     let source = if path.exists() {
         if !looks_like_plaintext_sqlite(path) {
-            return Ok(());
+            match verify_encrypted_sqlite(path, key_hex) {
+                Ok(()) => {
+                    if backup_path.exists() {
+                        std::fs::remove_file(&backup_path).map_err(|e| {
+                            format!(
+                                "encrypted vault is valid, but plaintext backup could not be removed: {e}"
+                            )
+                        })?;
+                    }
+                    return Ok(());
+                }
+                Err(_) if backup_path.exists() => {
+                    std::fs::remove_file(path).map_err(|e| {
+                        format!("failed to replace incomplete encrypted vault: {e}")
+                    })?;
+                    &backup_path
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            std::fs::rename(path, &backup_path).map_err(|e| e.to_string())?;
+            &backup_path
         }
-        std::fs::rename(path, &backup_path).map_err(|e| e.to_string())?;
-        backup_path
     } else if backup_path.exists() {
-        backup_path
+        &backup_path
     } else {
         return Ok(());
     };
@@ -209,7 +245,7 @@ fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String>
         "vault: обнаружен незашифрованный vault, конвертирую в SQLCipher (источник: {})",
         source.display()
     );
-    let plain_conn = Connection::open(&source).map_err(|e| e.to_string())?;
+    let plain_conn = Connection::open(source).map_err(|e| e.to_string())?;
     let escaped_target = path.display().to_string().replace('\'', "''");
     plain_conn
         .execute_batch(&format!(
@@ -224,6 +260,10 @@ fn migrate_plaintext_if_needed(path: &Path, key_hex: &str) -> Result<(), String>
                 source.display()
             )
         })?;
+    drop(plain_conn);
+    verify_encrypted_sqlite(path, key_hex)?;
+    std::fs::remove_file(&backup_path)
+        .map_err(|e| format!("encrypted vault is valid, but plaintext backup remains: {e}"))?;
     Ok(())
 }
 
@@ -267,6 +307,7 @@ pub fn open(
         conn.execute(migration, []).map_err(|e| e.to_string())?;
     }
     ensure_plan_items_plan_date_column(&conn)?;
+    ensure_plan_items_long_running_column(&conn)?;
     ensure_notes_audio_column(&conn)?;
     ensure_notes_group_column(&conn)?;
     ensure_reminders_audio_column(&conn)?;
@@ -304,6 +345,26 @@ fn ensure_plan_items_plan_date_column(conn: &Connection) -> Result<(), String> {
                  SET plan_date = {source}
                  WHERE plan_date IS NULL OR plan_date = ''"
             ),
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_plan_items_long_running_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(plan_items)")
+        .map_err(|e| e.to_string())?;
+    let has_column = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .any(|name| name == "is_long_running");
+    if !has_column {
+        conn.execute(
+            "ALTER TABLE plan_items
+             ADD COLUMN is_long_running INTEGER NOT NULL DEFAULT 0",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -465,19 +526,14 @@ mod tests {
         // ...и уже не выглядит как обычный (незашифрованный) SQLite.
         assert!(!looks_like_plaintext_sqlite(&path));
 
-        // Backup сохранён и содержит оригинальные, нетронутые данные.
+        // После успешной проверки зашифрованной базы plaintext-копии не остаётся.
         let backup_path = PathBuf::from(format!("{}.plaintext-backup", path.display()));
-        assert!(backup_path.exists());
-        assert_eq!(
-            read_legacy_title(&Connection::open(&backup_path).unwrap()),
-            "legacy task"
-        );
+        assert!(!backup_path.exists());
 
         // Windows не даёт удалить файл, пока для него открыт хендл соединения
         // (в отличие от Unix) — drop() обязателен перед remove_file ниже.
         drop(conn);
         fs::remove_file(&path).unwrap();
-        fs::remove_file(&backup_path).unwrap();
     }
 
     #[test]
@@ -500,10 +556,63 @@ mod tests {
     }
 
     #[test]
+    fn encrypted_vault_cleanup_removes_a_lingering_plaintext_backup() {
+        let path = temp_path("encrypted-with-backup");
+        let backup_path = PathBuf::from(format!("{}.plaintext-backup", path.display()));
+        let key_hex = "be".repeat(32);
+        {
+            let conn = open_with_key(&path, &key_hex);
+            conn.execute("CREATE TABLE t (id INTEGER)", []).unwrap();
+        }
+        write_plaintext_db_with_a_row(&backup_path);
+
+        migrate_plaintext_if_needed(&path, &key_hex).unwrap();
+
+        assert!(!backup_path.exists());
+        verify_encrypted_sqlite(&path, &key_hex).unwrap();
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn migrate_plaintext_if_needed_is_a_no_op_when_nothing_exists() {
         let path = temp_path("nothing-here");
         assert!(migrate_plaintext_if_needed(&path, &"cc".repeat(32)).is_ok());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn existing_plan_items_gain_the_long_running_column_with_a_safe_default() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE plan_items (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress_percent INTEGER,
+                plan_date TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO plan_items
+             (id, title, status, progress_percent, plan_date, created_at)
+             VALUES ('task-1', 'Legacy', 'open', NULL, '2026-07-26', datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        ensure_plan_items_long_running_column(&conn).unwrap();
+
+        let marker: bool = conn
+            .query_row(
+                "SELECT is_long_running FROM plan_items WHERE id = 'task-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!marker);
     }
 
     // Симулирует сбой между переименованием и sqlcipher_export: path
@@ -522,10 +631,10 @@ mod tests {
 
         let conn = open_with_key(&path, &key_hex);
         assert_eq!(read_legacy_title(&conn), "legacy task");
+        assert!(!backup_path.exists());
 
         drop(conn);
         fs::remove_file(&path).unwrap();
-        fs::remove_file(&backup_path).unwrap();
     }
 
     // Настоящий keyring (Windows Credential Manager), не мок — тот же принцип,
@@ -549,7 +658,6 @@ mod tests {
         drop(conn2);
 
         fs::remove_file(&path).unwrap();
-        fs::remove_file(format!("{}.plaintext-backup", path.display())).unwrap();
         let _ =
             keyring::Entry::new(KEYRING_SERVICE, &keyring_user).and_then(|e| e.delete_credential());
     }

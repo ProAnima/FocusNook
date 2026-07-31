@@ -67,6 +67,18 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
     }
   }, []);
 
+  const toggleLongRunning = useCallback(async (id: string) => {
+    const updated = await commands.planItems.toggleLongRunning(id).catch(() => null);
+    if (updated) {
+      setItems((prev) =>
+        updated.isLongRunning || updated.planDate === planDate
+          ? prev.map((item) => (item.id === id ? updated : item))
+          : prev.filter((item) => item.id !== id),
+      );
+    }
+    return updated;
+  }, [planDate]);
+
   const moveToDate = useCallback(async (id: string, targetDate: string) => {
     const updated = await commands.planItems.moveToDate(id, targetDate).catch(() => null);
     if (updated) {
@@ -91,6 +103,7 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
     toggleDone,
     cycleProgress,
     toggleDeferred,
+    toggleLongRunning,
     moveToDate,
     deleteItem,
   };
