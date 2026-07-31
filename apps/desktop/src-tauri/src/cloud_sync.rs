@@ -492,7 +492,7 @@ async fn perform_google_sync(app: tauri::AppHandle) -> Result<CloudSyncStatus, S
     let audio_key_state = app.state::<crate::AudioKeyState>();
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let remote_profile_id = provider_scope_key(ProviderId::GoogleDrive, &profile_id);
-    let audio_dir = profiles::data_dir(&profiles_state).join("audio");
+    let audio_dir = profiles::audio_dir(&profiles_state)?;
     let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
     let access_token = google_access_token(&app, &config, &profile_id).await?;
     let local_device_id = {

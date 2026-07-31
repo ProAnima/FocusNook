@@ -3933,3 +3933,100 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.account-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  background: var(--surface-gradient);
+}
+
+.account-card {
+  width: min(100%, 390px);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 28px;
+  border: 1px solid var(--surface-border);
+  border-radius: 20px;
+  background: var(--surface-gradient);
+  box-shadow: 0 22px 70px rgb(0 0 0 / 28%);
+}
+
+.account-mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.account-card h1 { margin: 18px 0 8px; font-size: 22px; }
+.account-card > p { margin: 0 0 22px; color: var(--text-secondary); line-height: 1.45; font-size: 13px; }
+.account-card form { display: grid; gap: 13px; }
+.account-card label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+.account-card input {
+  min-height: 42px;
+  box-sizing: border-box;
+  border: 1px solid var(--surface-border);
+  border-radius: 11px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  background: var(--control-bg);
+  outline: none;
+}
+.account-card input:focus { border-color: var(--accent); }
+.account-card label small, .account-selected-email { color: var(--text-tertiary); font-size: 11px; }
+.account-primary, .account-secondary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+}
+.account-primary { margin-top: 4px; color: var(--accent-contrast); background: var(--accent); font-weight: 650; }
+.account-secondary { color: var(--text-secondary); background: transparent; }
+.account-form-error { color: var(--danger, #ef6a6a); font-size: 12px; }
+.account-list { display: grid; gap: 8px; max-height: 230px; overflow: auto; }
+.account-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+}
+.account-option.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.account-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #16151c; font-weight: 700; }
+.account-option > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.account-option small { overflow: hidden; color: var(--text-tertiary); text-overflow: ellipsis; }
+.account-menu { min-width: 210px; }
+.account-menu-identity { display: grid; gap: 3px; padding: 9px 11px; border-bottom: 1px solid var(--divider); }
+.account-menu-identity span { overflow: hidden; color: var(--text-tertiary); font-size: 11px; text-overflow: ellipsis; }
+.account-menu .profile-menu-item { display: flex; align-items: center; gap: 8px; }
+.account-sync-toggle-card { padding: 13px; border: 1px solid var(--surface-border); border-radius: 12px; background: var(--control-bg); }
+.account-sync-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; }
+.account-sync-toggle-row > span { display: grid; gap: 4px; }
+.account-sync-toggle-row small { color: var(--text-tertiary); line-height: 1.35; }
+.account-sync-toggle-row input { width: 36px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); }
+.account-sync-confirm { display: grid; gap: 10px; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--divider); }
+.account-sync-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.account-sync-actions > button { min-height: 36px; }
+.server-sync-advanced > summary { padding: 8px 0; color: var(--text-tertiary); cursor: pointer; font-size: 11px; }
+
+@media (max-width: 600px) {
+  .account-gate { padding: 0; align-items: stretch; }
+  .account-card { width: 100%; max-height: 100vh; padding: max(28px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom)); border: 0; border-radius: 0; box-shadow: none; }
+}

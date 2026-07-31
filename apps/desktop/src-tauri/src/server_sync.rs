@@ -302,6 +302,7 @@ pub fn connect_server_sync(
         None,
         None,
     )?;
+    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
 
@@ -611,6 +612,48 @@ fn unsynced_operations_with_limit(
     Ok(rows)
 }
 
+fn undelivered_operations_with_limit(
+    conn: &Connection,
+    profile_id: &str,
+    remote_profile_id: &str,
+    limit: usize,
+) -> Result<Vec<LocalOperation>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT operation_id, device_id, entity_type, entity_id, op, patch, hlc, schema_version
+         FROM sync_operations AS operation
+         WHERE operation.profile_id = ?1
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_operation_deliveries AS delivery
+             WHERE delivery.operation_id = operation.operation_id
+               AND delivery.remote_profile_id = ?2
+           )
+         ORDER BY hlc ASC, operation_id ASC
+         LIMIT ?3",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(
+            params![profile_id, remote_profile_id, limit as i64],
+            |row| {
+                Ok(LocalOperation {
+                    operation_id: row.get(0)?,
+                    device_id: row.get(1)?,
+                    entity_type: row.get(2)?,
+                    entity_id: row.get(3)?,
+                    op: row.get(4)?,
+                    patch: row.get(5)?,
+                    hlc: row.get(6)?,
+                    schema_version: row.get(7)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
 fn local_attachment_ids(operation: &LocalOperation) -> Result<Vec<String>, String> {
     if operation.op == "delete" {
         return Ok(Vec::new());
@@ -626,14 +669,20 @@ fn local_attachment_ids(operation: &LocalOperation) -> Result<Vec<String>, Strin
 fn ready_unsynced_operations(
     conn: &Connection,
     profile_id: &str,
+    remote_profile_id: &str,
 ) -> Result<Vec<LocalOperation>, String> {
-    let candidates = unsynced_operations_with_limit(conn, profile_id, MAX_PENDING_OPERATION_SCAN)?;
+    let candidates = undelivered_operations_with_limit(
+        conn,
+        profile_id,
+        remote_profile_id,
+        MAX_PENDING_OPERATION_SCAN,
+    )?;
     let mut ready = Vec::with_capacity(MAX_OPS_PER_EXCHANGE);
     for operation in candidates {
         let attachment_ids = local_attachment_ids(&operation)?;
         let mut dependencies_ready = true;
         for blob_id in attachment_ids {
-            if !sync_blobs::is_uploaded(conn, profile_id, &blob_id)? {
+            if !sync_blobs::is_uploaded_to(conn, profile_id, &blob_id, remote_profile_id)? {
                 dependencies_ready = false;
                 break;
             }
@@ -646,6 +695,22 @@ fn ready_unsynced_operations(
         }
     }
     Ok(ready)
+}
+
+fn mark_delivered(
+    conn: &Connection,
+    remote_profile_id: &str,
+    operation_ids: &[String],
+) -> Result<(), String> {
+    for id in operation_ids {
+        conn.execute(
+            "INSERT OR IGNORE INTO sync_operation_deliveries
+             (operation_id, remote_profile_id, delivered_at) VALUES (?1, ?2, datetime('now'))",
+            params![id, remote_profile_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn mark_synced(conn: &Connection, operation_ids: &[String]) -> Result<(), String> {
@@ -925,7 +990,7 @@ async fn upload_pending_blobs(
 ) -> Result<usize, String> {
     let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        sync_blobs::pending_uploads(&conn, local_profile_id)?
+        sync_blobs::pending_uploads_for_remote(&conn, local_profile_id, remote_profile_id)?
     };
     let mut blocked = 0;
     for record in pending {
@@ -982,6 +1047,7 @@ async fn upload_pending_blobs(
         };
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
+        sync_blobs::mark_uploaded_to(&conn, local_profile_id, &blob_id, remote_profile_id)?;
     }
     Ok(blocked)
 }
@@ -1448,6 +1514,7 @@ fn apply_exchange_response(
     conn: &Connection,
     hlc_state: &sync_log::HlcClockState,
     profile_id: &str,
+    remote_profile_id: &str,
     credentials: &ServerSyncCredentials,
     sent_operation_ids: &[String],
     response: SyncExchangeResponse,
@@ -1458,6 +1525,7 @@ fn apply_exchange_response(
         sent_operation_ids.len(),
     )?;
     mark_synced(conn, sent_operation_ids)?;
+    mark_delivered(conn, remote_profile_id, sent_operation_ids)?;
     let mut missing_blobs = Vec::new();
     let mut confirmed_pull_hlc = None;
     for operation in &response.operations {
@@ -1467,6 +1535,11 @@ fn apply_exchange_response(
             &credentials.device_id,
             operation,
             credentials.media_key.as_deref(),
+        )?;
+        mark_delivered(
+            conn,
+            remote_profile_id,
+            std::slice::from_ref(&operation.operation_id),
         )?;
         let parsed_hlc = sync_log::Hlc::parse(&operation.hlc)
             .ok_or_else(|| format!("remote operation has invalid hlc: {}", operation.hlc))?;
@@ -1557,9 +1630,12 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     let profiles_state = app.state::<profiles::ProfilesState>();
     let hlc_state = app.state::<sync_log::HlcClockState>();
     let audio_key_state = app.state::<crate::AudioKeyState>();
+    if !profiles::active_sync_enabled(&profiles_state)? {
+        return Err("server sync is disabled for this account".to_string());
+    }
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let configured = endpoint_from_config(&config).is_ok();
-    let audio_dir = profiles::data_dir(&profiles_state).join("audio");
+    let audio_dir = profiles::audio_dir(&profiles_state)?;
     let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
 
     let credentials = {
@@ -1607,7 +1683,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             } else {
                 last_pulled_hlc(&conn, &remote_profile_id)?
             };
-            let operations = ready_unsynced_operations(&conn, &profile_id)?;
+            let operations = ready_unsynced_operations(&conn, &profile_id, &remote_profile_id)?;
             (last_pulled, operations)
         };
         let sent_full_page = operations.len() == MAX_OPS_PER_EXCHANGE;
@@ -1627,6 +1703,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
                 &conn,
                 &hlc_state,
                 &profile_id,
+                &remote_profile_id,
                 &credentials,
                 &sent_operation_ids,
                 response,
@@ -1679,6 +1756,10 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
 }
 
 pub fn spawn_best_effort(app: tauri::AppHandle) {
+    let profiles_state = app.state::<profiles::ProfilesState>();
+    if !profiles::active_sync_enabled(&profiles_state).unwrap_or(false) {
+        return;
+    }
     if SYNC_IN_FLIGHT
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -1820,7 +1901,76 @@ pub async fn connect_default_server_sync(
         None,
         None,
     )?;
+    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
+}
+
+#[tauri::command]
+pub async fn set_account_sync_enabled(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Db>,
+    config_state: tauri::State<'_, config::SyncProvidersConfig>,
+    profiles_state: tauri::State<'_, profiles::ProfilesState>,
+    enabled: bool,
+    password: String,
+    privacy_accepted: bool,
+) -> Result<ServerSyncStatus, String> {
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    if !enabled {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        delete_credentials(Some(&conn), &profile_id)?;
+        drop(conn);
+        profiles::set_sync_enabled(&profiles_state, false)?;
+        return server_sync_status(db, config_state, profiles_state);
+    }
+
+    profiles::verify_active_password(&profiles_state, &password)?;
+    let (display_name, email) = profiles::active_account_identity(&profiles_state)?;
+    let endpoint = endpoint_from_config(&config_state)?;
+    let device_id = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        ensure_local_device_id(&conn)?
+    };
+    let login = authenticate_account(
+        &endpoint,
+        "/v1/accounts/login",
+        &email,
+        &password,
+        None,
+        &device_id,
+        false,
+    )
+    .await;
+    let (token, account) = match login {
+        Ok(session) => session,
+        Err(error) if error.contains("401") && privacy_accepted => {
+            authenticate_account(
+                &endpoint,
+                "/v1/accounts/register",
+                &email,
+                &password,
+                Some(&display_name),
+                &device_id,
+                true,
+            )
+            .await?
+        }
+        Err(error) => return Err(error),
+    };
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    store_credentials(
+        Some(&conn),
+        &profile_id,
+        &endpoint,
+        &token,
+        &device_id,
+        Some(&account),
+        Some(blob_crypto::derive_media_key(&account.email, &password)),
+    )?;
+    drop(conn);
+    profiles::set_sync_enabled(&profiles_state, true)?;
+    spawn_best_effort(app);
+    server_sync_status(db, config_state, profiles_state)
 }
 
 #[tauri::command]
@@ -1867,6 +2017,7 @@ pub async fn register_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
+    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }
@@ -1908,6 +2059,7 @@ pub async fn login_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
+    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }
@@ -1919,7 +2071,10 @@ pub fn disconnect_server_sync(
 ) -> Result<(), String> {
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    delete_credentials(Some(&conn), &profile_id)
+    delete_credentials(Some(&conn), &profile_id)?;
+    drop(conn);
+    profiles::set_sync_enabled(&profiles_state, false)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1953,7 +2108,10 @@ pub async fn delete_server_account(
         return Err(format!("sync server returned {}", response.status()));
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    delete_credentials(Some(&conn), &profile_id)
+    delete_credentials(Some(&conn), &profile_id)?;
+    drop(conn);
+    profiles::set_sync_enabled(&profiles_state, false)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2033,6 +2191,16 @@ mod tests {
         )
         .unwrap();
         conn.execute(
+            "CREATE TABLE sync_operation_deliveries (
+                operation_id TEXT NOT NULL,
+                remote_profile_id TEXT NOT NULL,
+                delivered_at TEXT NOT NULL,
+                PRIMARY KEY (operation_id, remote_profile_id)
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "CREATE TABLE sync_pull_state (
                 profile_id TEXT PRIMARY KEY,
                 last_pulled_hlc TEXT,
@@ -2063,6 +2231,17 @@ mod tests {
                 deleted_at TEXT,
                 created_at TEXT NOT NULL,
                 PRIMARY KEY(profile_id, blob_id)
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE sync_blob_deliveries (
+                profile_id TEXT NOT NULL,
+                blob_id TEXT NOT NULL,
+                remote_profile_id TEXT NOT NULL,
+                delivered_at TEXT NOT NULL,
+                PRIMARY KEY(profile_id, blob_id, remote_profile_id)
             )",
             [],
         )
@@ -2259,7 +2438,7 @@ mod tests {
         )
         .unwrap();
 
-        let ready = ready_unsynced_operations(&conn, "profile").unwrap();
+        let ready = ready_unsynced_operations(&conn, "profile", "remote").unwrap();
         assert_eq!(
             ready
                 .iter()
@@ -2269,7 +2448,8 @@ mod tests {
         );
 
         sync_blobs::mark_uploaded(&conn, "profile", "picture.png", "sha", 10).unwrap();
-        let ready = ready_unsynced_operations(&conn, "profile").unwrap();
+        sync_blobs::mark_uploaded_to(&conn, "profile", "picture.png", "remote").unwrap();
+        let ready = ready_unsynced_operations(&conn, "profile", "remote").unwrap();
         assert_eq!(
             ready
                 .iter()
@@ -2288,6 +2468,39 @@ mod tests {
                 "sync completed; 1 attachment upload(s) pending; 2 attachment download(s) unavailable"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn delivery_state_is_scoped_to_each_remote_account() {
+        let conn = sync_test_conn();
+        conn.execute(
+            "INSERT INTO sync_operations
+             (operation_id, profile_id, device_id, entity_type, entity_id, op, patch, hlc,
+              schema_version, created_at)
+             VALUES ('local-op', 'profile', 'device', 'note', 'note', 'create', '{}',
+              '2026-07-01T00:00:00.000Z-0000-device', 1, datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(
+            undelivered_operations_with_limit(&conn, "profile", "account-a", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        mark_delivered(&conn, "account-a", &["local-op".to_string()]).unwrap();
+        assert!(
+            undelivered_operations_with_limit(&conn, "profile", "account-a", 10)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            undelivered_operations_with_limit(&conn, "profile", "account-b", 10)
+                .unwrap()
+                .len(),
+            1
         );
     }
 

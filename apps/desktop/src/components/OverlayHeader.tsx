@@ -31,10 +31,8 @@ interface OverlayHeaderProps {
   onToggleLayer: () => void;
   showSettings: boolean;
   onToggleSettings: () => void;
-  profiles: Profile[];
-  activeProfileId: string | null;
-  onSwitchProfile: (id: string) => void;
-  onCreateProfile: (displayName: string) => void;
+  account: Profile;
+  onLogout: () => void;
 }
 
 // Только для десктопа (см. App.tsx::DesktopShell) — на Android своя шапка
@@ -44,20 +42,16 @@ export function OverlayHeader({
   onToggleLayer,
   showSettings,
   onToggleSettings,
-  profiles,
-  activeProfileId,
-  onSwitchProfile,
-  onCreateProfile,
+  account,
+  onLogout,
 }: OverlayHeaderProps) {
   const { t } = useLocale();
   return (
     <header className="drag-zone" data-tauri-drag-region>
       <div className="header-left">
         <ProfileSwitcher
-          profiles={profiles}
-          activeProfileId={activeProfileId}
-          onSwitch={onSwitchProfile}
-          onCreate={onCreateProfile}
+          account={account}
+          onLogout={onLogout}
         />
         <span className="brand">FocusNook</span>
       </div>

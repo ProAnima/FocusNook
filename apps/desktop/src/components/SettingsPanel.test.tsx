@@ -264,7 +264,7 @@ describe("SettingsPanel", () => {
   });
 
   it("deletes a connected server account only after password confirmation", async () => {
-    serverSyncStatus.mockResolvedValueOnce({
+    serverSyncStatus.mockResolvedValue({
       available: true,
       accountEmail: "user@example.com",
       accountUserId: "user-1",

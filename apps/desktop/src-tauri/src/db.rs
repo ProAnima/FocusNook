@@ -312,8 +312,37 @@ pub fn open(
     ensure_notes_group_column(&conn)?;
     ensure_reminders_audio_column(&conn)?;
     ensure_sync_operations_synced_at_column(&conn)?;
+    ensure_sync_operation_deliveries_table(&conn)?;
     ensure_sync_blobs_columns(&conn)?;
+    ensure_sync_blob_deliveries_table(&conn)?;
     Ok(conn)
+}
+
+fn ensure_sync_blob_deliveries_table(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_blob_deliveries (
+           profile_id TEXT NOT NULL,
+           blob_id TEXT NOT NULL,
+           remote_profile_id TEXT NOT NULL,
+           delivered_at TEXT NOT NULL,
+           PRIMARY KEY (profile_id, blob_id, remote_profile_id)
+         );",
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn ensure_sync_operation_deliveries_table(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_operation_deliveries (
+           operation_id TEXT NOT NULL,
+           remote_profile_id TEXT NOT NULL,
+           delivered_at TEXT NOT NULL,
+           PRIMARY KEY (operation_id, remote_profile_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_sync_operation_deliveries_remote
+           ON sync_operation_deliveries(remote_profile_id, delivered_at);",
+    )
+    .map_err(|e| e.to_string())
 }
 
 // Раздел 8 ТЗ, аудио-заметки: notes уже существовала до этой колонки, а

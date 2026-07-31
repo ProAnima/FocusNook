@@ -3,6 +3,7 @@ import {
   BellRing,
   CalendarDays,
   NotebookPen,
+  LogOut,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { commands, isAlertWindow, type FolderRailSide } from "./shared/commands";
@@ -25,6 +26,7 @@ import { LiveBackground } from "./components/LiveBackground";
 import { OverlayHeader } from "./components/OverlayHeader";
 import { TabBar, type TabDefinition } from "./components/TabBar";
 import { WindowResizeHandles } from "./components/WindowResizeHandles";
+import { AccountGate } from "./components/AccountGate";
 import "./App.css";
 
 type TabKey = "day" | "notes" | "reminders" | "settings";
@@ -75,14 +77,15 @@ interface DesktopShellProps {
   shortcutInfo: ShortcutInfo | null;
   theme: ResolvedTheme;
   folderRailSide: FolderRailSide;
+  accounts: ReturnType<typeof useProfiles>;
 }
 
 // Desktop: тихий угловой оверлей (раздел 12 ТЗ) — настройки нарочно не
 // четвёртая вкладка, а ненавязчивый экран за иконкой в шапке.
-function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide }: DesktopShellProps) {
+function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide, accounts }: DesktopShellProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
   const [showSettings, setShowSettings] = useState(false);
-  const { profiles, activeProfileId, createProfile, switchProfile } = useProfiles();
+  const { activeProfileId, activeProfile, logout } = accounts;
   const mainTabs = useMainTabs();
 
   return (
@@ -94,10 +97,8 @@ function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide 
           onToggleLayer={toggleLayer}
           showSettings={showSettings}
           onToggleSettings={() => setShowSettings((value) => !value)}
-          profiles={profiles}
-          activeProfileId={activeProfileId}
-          onSwitchProfile={switchProfile}
-          onCreateProfile={createProfile}
+          account={activeProfile!}
+          onLogout={() => void logout()}
         />
 
         {!showSettings && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
@@ -169,11 +170,14 @@ function useFolderRailSide(isDesktop: boolean): FolderRailSide {
 function MobileShell({
   shortcutInfo,
   theme,
+  accounts,
 }: {
   shortcutInfo: ShortcutInfo | null;
   theme: ResolvedTheme;
+  accounts: ReturnType<typeof useProfiles>;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
+  const { t } = useLocale();
   const mobileTabs = useMobileTabs();
   const activeLabel = mobileTabs.find((tab) => tab.key === activeTab)?.label ?? "";
 
@@ -182,6 +186,9 @@ function MobileShell({
       <LiveBackground theme={theme} />
       <header className="mobile-topbar">
         <span className="mobile-topbar-title">{activeLabel}</span>
+        <button className="icon-button" onClick={() => void accounts.logout()} title={t("account.logout")} aria-label={t("account.logout")}>
+          <LogOut size={16} />
+        </button>
       </header>
 
       <main className="body">
@@ -208,9 +215,24 @@ function Shell() {
   const { front, toggleLayer, shortcutInfo, isDesktop } = useLayerToggle();
   const { effective } = useTheme();
   const folderRailSide = useFolderRailSide(isDesktop);
+  const accounts = useProfiles();
   useDesktopCursorPassthrough(isDesktop);
   useLiveBackgroundPointer(effective);
   useServerSyncWakeup();
+  if (accounts.loading) return <div className="account-gate" />;
+  const setupRequired = !accounts.activeProfile?.accountConfigured;
+  if (setupRequired || accounts.sessionLocked) {
+    return (
+      <AccountGate
+        accounts={accounts.profiles}
+        activeAccount={accounts.activeProfile}
+        setupRequired={setupRequired}
+        onConfigure={accounts.configureAccount}
+        onCreate={accounts.createAccount}
+        onSignIn={accounts.switchAccount}
+      />
+    );
+  }
   return isDesktop ? (
     <DesktopShell
       front={front}
@@ -218,9 +240,10 @@ function Shell() {
       shortcutInfo={shortcutInfo}
       theme={effective}
       folderRailSide={folderRailSide}
+      accounts={accounts}
     />
   ) : (
-    <MobileShell shortcutInfo={shortcutInfo} theme={effective} />
+    <MobileShell shortcutInfo={shortcutInfo} theme={effective} accounts={accounts} />
   );
 }
 

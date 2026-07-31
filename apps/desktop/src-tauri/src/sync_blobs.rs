@@ -156,6 +156,69 @@ pub fn pending_uploads(conn: &Connection, profile_id: &str) -> Result<Vec<BlobRe
     Ok(collected)
 }
 
+pub fn pending_uploads_for_remote(
+    conn: &Connection,
+    profile_id: &str,
+    remote_profile_id: &str,
+) -> Result<Vec<BlobRecord>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT blob_id, local_path, content_type FROM sync_blobs AS blob
+         WHERE blob.profile_id = ?1 AND blob.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_blob_deliveries AS delivery
+             WHERE delivery.profile_id = blob.profile_id
+               AND delivery.blob_id = blob.blob_id
+               AND delivery.remote_profile_id = ?2
+           )
+         ORDER BY created_at ASC, blob_id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![profile_id, remote_profile_id], |row| {
+            Ok(BlobRecord {
+                blob_id: row.get(0)?,
+                local_path: row.get(1)?,
+                content_type: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+pub fn mark_uploaded_to(
+    conn: &Connection,
+    profile_id: &str,
+    blob_id: &str,
+    remote_profile_id: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_blob_deliveries
+         (profile_id, blob_id, remote_profile_id, delivered_at)
+         VALUES (?1, ?2, ?3, datetime('now'))",
+        params![profile_id, blob_id, remote_profile_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn is_uploaded_to(
+    conn: &Connection,
+    profile_id: &str,
+    blob_id: &str,
+    remote_profile_id: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_blob_deliveries
+         WHERE profile_id = ?1 AND blob_id = ?2 AND remote_profile_id = ?3)",
+        params![profile_id, blob_id, remote_profile_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 pub fn pending_downloads(conn: &Connection, profile_id: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare(

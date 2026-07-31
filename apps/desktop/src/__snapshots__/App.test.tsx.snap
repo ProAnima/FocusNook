@@ -16,6 +16,20 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
         <div
           class="header-left"
         >
+          <div
+            class="profile-switcher"
+          >
+            <button
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-label="Preview"
+              class="profile-avatar"
+              style="background: rgb(242, 180, 99);"
+              title="Preview"
+            >
+              P
+            </button>
+          </div>
           <span
             class="brand"
           >
@@ -507,6 +521,35 @@ exports[`App layout snapshots > matches the mobile shell layout 1`] = `
       >
         День
       </span>
+      <button
+        aria-label="Выйти"
+        class="icon-button"
+        title="Выйти"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-log-out"
+          fill="none"
+          height="16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="16"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m16 17 5-5-5-5"
+          />
+          <path
+            d="M21 12H9"
+          />
+          <path
+            d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+          />
+        </svg>
+      </button>
     </header>
     <main
       class="body"

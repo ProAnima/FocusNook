@@ -90,11 +90,15 @@ export interface Profile {
   id: string;
   displayName: string;
   avatarColor: string;
+  email: string | null;
+  accountConfigured: boolean;
+  syncEnabled: boolean;
 }
 
 export interface ProfilesResponse {
   profiles: Profile[];
   activeProfileId: string;
+  sessionLocked: boolean;
 }
 
 export interface CursorClientPosition {
@@ -222,11 +226,17 @@ export const commands = {
     async list(): Promise<ProfilesResponse> {
       return invoke<ProfilesResponse>("list_profiles");
     },
-    async create(displayName: string): Promise<ProfilesResponse> {
-      return invoke<ProfilesResponse>("create_profile", { displayName });
+    async create(displayName: string, email: string, password: string): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("create_profile", { displayName, email, password });
     },
-    async switchTo(id: string): Promise<ProfilesResponse> {
-      return invoke<ProfilesResponse>("switch_active_profile", { id });
+    async configure(displayName: string, email: string, password: string): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("configure_active_account", { displayName, email, password });
+    },
+    async switchTo(id: string, password: string): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("switch_active_profile", { id, password });
+    },
+    async logout(): Promise<ProfilesResponse> {
+      return invoke<ProfilesResponse>("logout_account");
     },
   },
   planItems: {
@@ -404,6 +414,9 @@ export const commands = {
     },
     async request(): Promise<void> {
       await invoke("request_server_sync");
+    },
+    async setEnabled(enabled: boolean, password = "", privacyAccepted = false): Promise<ServerSyncStatus> {
+      return invoke<ServerSyncStatus>("set_account_sync_enabled", { enabled, password, privacyAccepted });
     },
     async connectDefault(): Promise<ServerSyncStatus> {
       return invoke<ServerSyncStatus>("connect_default_server_sync");

@@ -1,14 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { commands, type Locale } from "./commands";
 import { LocaleContext } from "./locale-context";
-import { translate } from "./translations";
+import { LOCALES, translate } from "./translations";
 
 const DEFAULT_LOCALE: Locale = "ru";
 
+function previewLocale(): Locale | null {
+  if (!import.meta.env.DEV) return null;
+  const value = new URLSearchParams(window.location.search).get("localePreview");
+  return LOCALES.find((locale) => locale === value) ?? null;
+}
+
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+  const preview = previewLocale();
+  const [locale, setLocaleState] = useState<Locale>(preview ?? DEFAULT_LOCALE);
 
   useEffect(() => {
+    if (preview) return;
     let cancelled = false;
     commands.settings
       .getLocale()
@@ -21,7 +29,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preview]);
 
   function setLocale(next: Locale) {
     setLocaleState(next);

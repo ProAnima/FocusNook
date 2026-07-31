@@ -225,8 +225,10 @@ fn create_profile(
     audio_key_state: tauri::State<AudioKeyState>,
     state: tauri::State<profiles::ProfilesState>,
     display_name: String,
+    email: String,
+    password: String,
 ) -> Result<profiles::ProfilesResponse, String> {
-    let (pending, vault_path) = profiles::prepare_create(&state, &display_name)?;
+    let (pending, vault_path) = profiles::prepare_create(&state, &display_name, &email, &password)?;
     let data_dir = profiles::data_dir(&state).to_path_buf();
     install_vault(
         &app,
@@ -237,9 +239,25 @@ fn create_profile(
         &vault_path,
         pending.keyring_user(),
     )?;
-    let created = profiles::commit_create(&state, pending)?;
-    profiles::set_active(&state, &created.id)?;
+    profiles::commit_create(&state, pending)?;
     profiles::list(&state)
+}
+
+#[tauri::command]
+fn configure_active_account(
+    state: tauri::State<profiles::ProfilesState>,
+    display_name: String,
+    email: String,
+    password: String,
+) -> Result<profiles::ProfilesResponse, String> {
+    profiles::configure_active_account(&state, &display_name, &email, &password)
+}
+
+#[tauri::command]
+fn logout_account(
+    state: tauri::State<profiles::ProfilesState>,
+) -> Result<profiles::ProfilesResponse, String> {
+    profiles::lock_session(&state)
 }
 
 #[tauri::command]
@@ -250,8 +268,11 @@ fn switch_active_profile(
     audio_key_state: tauri::State<AudioKeyState>,
     state: tauri::State<profiles::ProfilesState>,
     id: String,
+    password: String,
 ) -> Result<profiles::ProfilesResponse, String> {
+    profiles::verify_account_password(&state, &id, &password)?;
     switch_vault(&app, &db, &hlc_state, &audio_key_state, &state, &id)?;
+    profiles::unlock_account(&state, &id, &password)?;
     profiles::list(&state)
 }
 
@@ -546,7 +567,10 @@ fn delete_note(
 }
 
 fn audio_dir(profiles_state: &tauri::State<profiles::ProfilesState>) -> std::path::PathBuf {
-    profiles::data_dir(profiles_state).join("audio")
+    match profiles::audio_dir(profiles_state) {
+        Ok(path) => path,
+        Err(_) => profiles::data_dir(profiles_state).join("audio"),
+    }
 }
 
 #[tauri::command]
@@ -1209,6 +1233,8 @@ pub fn run() {
             is_desktop_platform,
             list_profiles,
             create_profile,
+            configure_active_account,
+            logout_account,
             switch_active_profile,
             list_plan_items,
             list_plan_items_range,
@@ -1242,6 +1268,7 @@ pub fn run() {
             server_sync::server_sync_status,
             server_sync::connect_server_sync,
             server_sync::connect_default_server_sync,
+            server_sync::set_account_sync_enabled,
             server_sync::register_server_account,
             server_sync::login_server_account,
             server_sync::delete_server_account,

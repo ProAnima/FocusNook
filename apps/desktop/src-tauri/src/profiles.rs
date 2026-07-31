@@ -1,3 +1,4 @@
+use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,12 @@ struct ProfileRecord {
     // не сам ключ, а то, под каким именем его искать в OS keychain (нужно
     // разное имя на профиль, иначе все профили делили бы один ключ).
     keyring_user: String,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    password_hash: Option<String>,
+    #[serde(default)]
+    sync_enabled: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -24,6 +31,9 @@ pub struct ProfileDto {
     pub id: String,
     pub display_name: String,
     pub avatar_color: String,
+    pub email: Option<String>,
+    pub account_configured: bool,
+    pub sync_enabled: bool,
 }
 
 impl From<&ProfileRecord> for ProfileDto {
@@ -32,6 +42,9 @@ impl From<&ProfileRecord> for ProfileDto {
             id: record.id.clone(),
             display_name: record.display_name.clone(),
             avatar_color: record.avatar_color.clone(),
+            email: record.email.clone(),
+            account_configured: record.email.is_some() && record.password_hash.is_some(),
+            sync_enabled: record.sync_enabled,
         }
     }
 }
@@ -41,12 +54,15 @@ impl From<&ProfileRecord> for ProfileDto {
 pub struct ProfilesResponse {
     pub profiles: Vec<ProfileDto>,
     pub active_profile_id: String,
+    pub session_locked: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
 struct ProfilesFile {
     profiles: Vec<ProfileRecord>,
     active_profile_id: Option<String>,
+    #[serde(default)]
+    session_locked: bool,
 }
 
 pub struct ProfilesState {
@@ -106,8 +122,12 @@ fn load_or_migrate(data_dir: &Path) -> Result<ProfilesFile, String> {
             display_name: "Профиль".to_string(),
             avatar_color: pick_color(0),
             keyring_user,
+            email: None,
+            password_hash: None,
+            sync_enabled: false,
         }],
         active_profile_id: Some(id),
+        session_locked: false,
     };
     save(data_dir, &file)?;
     Ok(file)
@@ -129,6 +149,7 @@ fn to_response(file: &ProfilesFile) -> Result<ProfilesResponse, String> {
     Ok(ProfilesResponse {
         profiles: file.profiles.iter().map(ProfileDto::from).collect(),
         active_profile_id,
+        session_locked: file.session_locked,
     })
 }
 
@@ -146,6 +167,211 @@ pub fn active_profile_id(state: &ProfilesState) -> Result<String, String> {
     file.active_profile_id
         .clone()
         .ok_or_else(|| "нет активного профиля".to_string())
+}
+
+fn normalize_email(value: &str) -> Result<String, String> {
+    let email = value.trim().to_lowercase();
+    if email.len() < 3
+        || email.len() > 254
+        || !email.contains('@')
+        || email.chars().any(char::is_whitespace)
+    {
+        return Err("invalid account email".to_string());
+    }
+    Ok(email)
+}
+
+fn hash_password(password: &str) -> Result<String, String> {
+    if password.chars().count() < 10 {
+        return Err("account password must contain at least 10 characters".to_string());
+    }
+    let salt =
+        SaltString::encode_b64(uuid::Uuid::now_v7().as_bytes()).map_err(|e| e.to_string())?;
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|e| e.to_string())
+}
+
+fn password_matches(record: &ProfileRecord, password: &str) -> Result<bool, String> {
+    let encoded = record
+        .password_hash
+        .as_deref()
+        .ok_or_else(|| "account is not configured".to_string())?;
+    let parsed = PasswordHash::new(encoded).map_err(|e| e.to_string())?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok())
+}
+
+pub fn verify_active_password(state: &ProfilesState, password: &str) -> Result<(), String> {
+    let file = state.file.lock().map_err(|e| e.to_string())?;
+    let active_id = file
+        .active_profile_id
+        .as_deref()
+        .ok_or_else(|| "no active account".to_string())?;
+    let record = file
+        .profiles
+        .iter()
+        .find(|record| record.id == active_id)
+        .ok_or_else(|| "active account not found".to_string())?;
+    if password_matches(record, password)? {
+        Ok(())
+    } else {
+        Err("invalid account password".to_string())
+    }
+}
+
+pub fn verify_account_password(
+    state: &ProfilesState,
+    profile_id: &str,
+    password: &str,
+) -> Result<(), String> {
+    let file = state.file.lock().map_err(|e| e.to_string())?;
+    let record = file
+        .profiles
+        .iter()
+        .find(|record| record.id == profile_id)
+        .ok_or_else(|| "account not found".to_string())?;
+    if password_matches(record, password)? {
+        Ok(())
+    } else {
+        Err("invalid account password".to_string())
+    }
+}
+
+pub fn configure_active_account(
+    state: &ProfilesState,
+    display_name: &str,
+    email: &str,
+    password: &str,
+) -> Result<ProfilesResponse, String> {
+    let normalized_email = normalize_email(email)?;
+    let password_hash = hash_password(password)?;
+    let name = display_name.trim();
+    if name.is_empty() {
+        return Err("account name is required".to_string());
+    }
+    let mut file = state.file.lock().map_err(|e| e.to_string())?;
+    let active_id = file
+        .active_profile_id
+        .clone()
+        .ok_or_else(|| "no active account".to_string())?;
+    if file.profiles.iter().any(|record| {
+        record.id != active_id && record.email.as_deref() == Some(normalized_email.as_str())
+    }) {
+        return Err("an account with this email already exists on this device".to_string());
+    }
+    let record = file
+        .profiles
+        .iter_mut()
+        .find(|record| record.id == active_id)
+        .ok_or_else(|| "active account not found".to_string())?;
+    if record.password_hash.is_some() {
+        return Err("account is already configured".to_string());
+    }
+    record.display_name = name.to_string();
+    record.email = Some(normalized_email);
+    record.password_hash = Some(password_hash);
+    file.session_locked = false;
+    save(&state.data_dir, &file)?;
+    to_response(&file)
+}
+
+pub fn lock_session(state: &ProfilesState) -> Result<ProfilesResponse, String> {
+    let mut file = state.file.lock().map_err(|e| e.to_string())?;
+    file.session_locked = true;
+    save(&state.data_dir, &file)?;
+    to_response(&file)
+}
+
+pub fn unlock_account(
+    state: &ProfilesState,
+    profile_id: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut file = state.file.lock().map_err(|e| e.to_string())?;
+    let record = file
+        .profiles
+        .iter()
+        .find(|record| record.id == profile_id)
+        .ok_or_else(|| "account not found".to_string())?;
+    if !password_matches(record, password)? {
+        return Err("invalid account password".to_string());
+    }
+    file.active_profile_id = Some(profile_id.to_string());
+    file.session_locked = false;
+    save(&state.data_dir, &file)
+}
+
+pub fn set_sync_enabled(state: &ProfilesState, enabled: bool) -> Result<ProfilesResponse, String> {
+    let mut file = state.file.lock().map_err(|e| e.to_string())?;
+    let active_id = file
+        .active_profile_id
+        .clone()
+        .ok_or_else(|| "no active account".to_string())?;
+    let record = file
+        .profiles
+        .iter_mut()
+        .find(|record| record.id == active_id)
+        .ok_or_else(|| "active account not found".to_string())?;
+    record.sync_enabled = enabled;
+    save(&state.data_dir, &file)?;
+    to_response(&file)
+}
+
+pub fn active_sync_enabled(state: &ProfilesState) -> Result<bool, String> {
+    let file = state.file.lock().map_err(|e| e.to_string())?;
+    let active_id = file
+        .active_profile_id
+        .as_deref()
+        .ok_or_else(|| "no active account".to_string())?;
+    file.profiles
+        .iter()
+        .find(|record| record.id == active_id)
+        .map(|record| record.sync_enabled)
+        .ok_or_else(|| "active account not found".to_string())
+}
+
+pub fn active_account_identity(state: &ProfilesState) -> Result<(String, String), String> {
+    let file = state.file.lock().map_err(|e| e.to_string())?;
+    let active_id = file
+        .active_profile_id
+        .as_deref()
+        .ok_or_else(|| "no active account".to_string())?;
+    let record = file
+        .profiles
+        .iter()
+        .find(|record| record.id == active_id)
+        .ok_or_else(|| "active account not found".to_string())?;
+    let email = record
+        .email
+        .clone()
+        .ok_or_else(|| "account is not configured".to_string())?;
+    Ok((record.display_name.clone(), email))
+}
+
+pub fn audio_dir(state: &ProfilesState) -> Result<PathBuf, String> {
+    let profile_id = active_profile_id(state)?;
+    let account_dir = state.data_dir.join("accounts").join(profile_id);
+    let target = account_dir.join("audio");
+    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    let legacy = state.data_dir.join("audio");
+    let migration_marker = account_dir.join(".legacy-audio-migrated");
+    if legacy.exists() && !migration_marker.exists() {
+        for entry in fs::read_dir(&legacy).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if !entry.file_type().map_err(|e| e.to_string())?.is_file() {
+                continue;
+            }
+            let destination = target.join(entry.file_name());
+            if !destination.exists() {
+                fs::copy(entry.path(), destination).map_err(|e| e.to_string())?;
+            }
+        }
+        fs::write(migration_marker, b"1").map_err(|e| e.to_string())?;
+    }
+    Ok(target)
 }
 
 // Общий data_dir приложения (НЕ per-profile) — используется для ресурсов, не
@@ -203,14 +429,27 @@ impl PendingProfile {
 pub fn prepare_create(
     state: &ProfilesState,
     display_name: &str,
+    email: &str,
+    password: &str,
 ) -> Result<(PendingProfile, PathBuf), String> {
     let file = state.file.lock().map_err(|e| e.to_string())?;
+    let normalized_email = normalize_email(email)?;
+    if file
+        .profiles
+        .iter()
+        .any(|record| record.email.as_deref() == Some(normalized_email.as_str()))
+    {
+        return Err("an account with this email already exists on this device".to_string());
+    }
     let id = uuid::Uuid::now_v7().to_string();
     let record = ProfileRecord {
         id: id.clone(),
         display_name: display_name.to_string(),
         avatar_color: pick_color(file.profiles.len()),
         keyring_user: format!("vault-key-{id}"),
+        email: Some(normalized_email),
+        password_hash: Some(hash_password(password)?),
+        sync_enabled: false,
     };
     let vault_path = state.data_dir.join(vault_filename(&id));
     Ok((PendingProfile { record }, vault_path))
@@ -221,6 +460,8 @@ pub fn prepare_create(
 pub fn commit_create(state: &ProfilesState, pending: PendingProfile) -> Result<ProfileDto, String> {
     let mut file = state.file.lock().map_err(|e| e.to_string())?;
     file.profiles.push(pending.record.clone());
+    file.active_profile_id = Some(pending.record.id.clone());
+    file.session_locked = false;
     save(&state.data_dir, &file)?;
     Ok(ProfileDto::from(&pending.record))
 }
@@ -240,7 +481,9 @@ mod tests {
     // Тестовый эквивалент старой create(): здесь нет реального vault, который
     // мог бы не открыться, поэтому commit сразу вслед за prepare безопасен.
     fn create_for_test(state: &ProfilesState, display_name: &str) -> ProfileDto {
-        let (pending, _vault_path) = prepare_create(state, display_name).unwrap();
+        let email = format!("{}@example.test", uuid::Uuid::now_v7());
+        let (pending, _vault_path) =
+            prepare_create(state, display_name, &email, "test-password").unwrap();
         commit_create(state, pending).unwrap()
     }
 
@@ -282,7 +525,8 @@ mod tests {
         let state = init(&dir).unwrap();
         let before = list(&state).unwrap().profiles.len();
 
-        let (_pending, _vault_path) = prepare_create(&state, "Рабочий").unwrap();
+        let (_pending, _vault_path) =
+            prepare_create(&state, "Рабочий", "worker@example.test", "test-password").unwrap();
         // Ни commit, ни запись на диск не происходили — как если бы
         // открытие vault упало до вызова commit_create.
         assert_eq!(list(&state).unwrap().profiles.len(), before);
@@ -377,6 +621,38 @@ mod tests {
         let response = list(&second_run).unwrap();
         assert_eq!(response.profiles.len(), 1);
         assert_eq!(response.active_profile_id, original_id);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_profile_can_be_upgraded_to_a_password_protected_account() {
+        let dir = temp_dir();
+        let state = init(&dir).unwrap();
+        let response =
+            configure_active_account(&state, "Ян", " I@Example.Test ", "StrongPass123").unwrap();
+
+        assert!(response.profiles[0].account_configured);
+        assert_eq!(
+            response.profiles[0].email.as_deref(),
+            Some("i@example.test")
+        );
+        assert!(verify_active_password(&state, "StrongPass123").is_ok());
+        assert!(verify_active_password(&state, "wrong-password").is_err());
+        let raw = fs::read_to_string(index_path(&dir)).unwrap();
+        assert!(!raw.contains("StrongPass123"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn logout_locks_the_session_without_removing_accounts() {
+        let dir = temp_dir();
+        let state = init(&dir).unwrap();
+        configure_active_account(&state, "Ян", "i@example.test", "StrongPass123").unwrap();
+        let locked = lock_session(&state).unwrap();
+        assert!(locked.session_locked);
+        assert_eq!(locked.profiles.len(), 1);
+        unlock_account(&state, &locked.active_profile_id, "StrongPass123").unwrap();
+        assert!(!list(&state).unwrap().session_locked);
         fs::remove_dir_all(&dir).unwrap();
     }
 }
