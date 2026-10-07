@@ -8,7 +8,7 @@ export type { ThemeMode };
 // effective совпадает с mode один-в-один.
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 
-export const LIVE_THEMES: readonly LiveThemeMode[] = LIVE_THEME_MODES;
+const LIVE_THEMES: readonly LiveThemeMode[] = LIVE_THEME_MODES;
 
 export function isLiveTheme(theme: ResolvedTheme): theme is LiveThemeMode {
   return (LIVE_THEMES as readonly string[]).includes(theme);

@@ -1,0 +1,522 @@
+/* --- Общий layout вкладок со списком + quick-add (День, Заметки) --- */
+
+@media (max-width: 320px) {
+  .desktop-stage .drag-zone {
+    padding-left: 10px;
+  }
+
+  .desktop-stage .tabs {
+    justify-content: space-around;
+    padding-inline: 8px;
+  }
+
+  .desktop-stage .tab {
+    flex: 1;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .desktop-stage .tab span {
+    display: none;
+  }
+
+  .desktop-stage .body {
+    padding: 10px;
+  }
+
+}
+
+.tab-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 10px;
+}
+
+/* --- День --- */
+
+.day-shell {
+  position: relative;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.day-date-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.day-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.day-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.day-today-button {
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.day-today-button:hover {
+  background: color-mix(in srgb, var(--accent-soft-bg) 72%, var(--accent));
+}
+
+.calendar-popover {
+  position: absolute;
+  top: 42px;
+  left: 0;
+  right: 0;
+  z-index: 7;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider);
+  background: var(--surface-gradient);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.calendar-popover.is-placement-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.calendar-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.calendar-weekday {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-day:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.calendar-day.is-muted {
+  opacity: 0.48;
+}
+
+.calendar-day.is-today {
+  border-color: var(--accent-soft-border);
+}
+
+.calendar-day.is-selected {
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+  border-color: var(--accent-soft-border);
+}
+
+.calendar-marks {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  display: flex;
+  gap: 3px;
+  transform: translateX(-50%);
+}
+
+.calendar-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.calendar-dot.is-task {
+  background: var(--accent);
+}
+
+.calendar-dot.is-reminder {
+  background: var(--warning);
+}
+
+.plan-groups {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.long-running-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 5px 3px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 68%, var(--divider));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent-soft-bg) 34%, transparent);
+}
+
+.long-running-header {
+  min-height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px;
+  color: var(--accent);
+}
+
+.long-running-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.long-running-count {
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  opacity: 0.72;
+}
+
+.plan-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.plan-item:hover {
+  background: var(--control-bg);
+}
+
+.plan-item.is-long-running {
+  padding-block: 5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.plan-item.is-long-running:hover {
+  background: color-mix(in srgb, var(--control-bg) 68%, transparent);
+}
+
+.plan-checkbox {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1.5px solid var(--divider);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.plan-item.status-done .plan-checkbox {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.plan-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.plan-item.status-done .plan-title {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.plan-details-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 160;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.plan-details-dialog {
+  position: relative;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 42px 20px 22px;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: var(--surface-gradient);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.42);
+}
+
+.plan-details-dialog p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.plan-details-dialog .note-audio-card {
+  margin-top: 16px;
+}
+
+.plan-details-dialog .item-details-meta {
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.plan-long-running-toggle {
+  width: 100%;
+  min-height: 58px;
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-long-running-toggle:hover,
+.plan-long-running-toggle.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.plan-long-running-toggle > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.plan-long-running-toggle strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.plan-long-running-toggle small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.plan-details-actions {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.plan-details-actions button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.plan-details-actions button:hover {
+  border-color: var(--accent-soft-border);
+  color: var(--text-primary);
+}
+
+.plan-details-close {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+}
+
+.plan-progress {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warning);
+  background: var(--warning-soft-bg);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Раздел 12 ТЗ: "контекстное меню: редактировать, отложить, удалить" —
+   реализовано как иконки-действия, а не выпадающее меню (проще и меньше
+   кода при том же результате), скрыты до наведения/фокуса, чтобы не
+   захламлять список в состоянии покоя. */
+.plan-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.plan-item:hover .plan-item-actions,
+.plan-item:focus-within .plan-item-actions {
+  opacity: 1;
+}
+
+.quick-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-tertiary);
+}
+
+.quick-add input,
+.quick-add textarea {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.quick-add textarea {
+  max-height: 92px;
+  resize: none;
+  line-height: 1.35;
+  overflow-y: auto;
+}
+
+.quick-add input::placeholder,
+.quick-add textarea::placeholder {
+  color: var(--text-tertiary);
+}
+

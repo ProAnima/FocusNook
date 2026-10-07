@@ -3,7 +3,6 @@ import { X } from "lucide-react";
 import { useLocale } from "../shared/useLocale";
 
 // Focus, Escape and outside-click handling are kept in one accessible modal primitive.
-// eslint-disable-next-line max-lines-per-function
 export function ItemDetailsDialog({
   ariaLabel,
   children,

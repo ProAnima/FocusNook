@@ -21,8 +21,8 @@ vi.mock("../shared/commands", () => ({
   },
 }));
 
-vi.mock("../shared/useMicrophoneSettings", () => ({
-  useMicrophoneSettings: () => ({ selectedDeviceId: null }),
+vi.mock("../shared/useSelectedMicrophone", () => ({
+  useSelectedMicrophone: () => ({ selectedDeviceId: null }),
 }));
 
 vi.mock("../shared/useAudioRecorder", () => ({

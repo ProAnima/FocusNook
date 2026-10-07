@@ -11,7 +11,7 @@ export interface ThemeCatalogItem {
   preview: readonly [string, string, string];
 }
 
-export const BASE_THEME_OPTIONS = [
+const BASE_THEME_OPTIONS = [
   {
     mode: "system",
     kind: "adaptive",
@@ -35,7 +35,7 @@ export const BASE_THEME_OPTIONS = [
   },
 ] as const satisfies readonly ThemeCatalogItem[];
 
-export const LIVE_THEME_OPTIONS = [
+const LIVE_THEME_OPTIONS = [
   {
     mode: "aurora",
     kind: "live",
@@ -109,7 +109,7 @@ export interface LiveThemeShaderConfig {
 
 export const LIVE_THEME_MODES = LIVE_THEME_OPTIONS.map((theme) => theme.mode) as readonly LiveThemeMode[];
 
-export const LIVE_THEME_SHADER_CONFIG: Record<LiveThemeMode, LiveThemeShaderConfig> = {
+const LIVE_THEME_SHADER_CONFIG: Record<LiveThemeMode, LiveThemeShaderConfig> = {
   aurora: {
     colors: ["#8b7dff", "#34e0ba", "#2746c7"],
     speed: 0.74,

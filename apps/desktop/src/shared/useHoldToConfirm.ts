@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Mous
 
 const HOLD_TO_CONFIRM_MS = 900;
 
-export function useHoldToConfirm(onConfirm: () => void) {
+/** Таймер удержания: `start` подтверждает через HOLD_TO_CONFIRM_MS, `cancel` сбрасывает. */
+function useHoldTimer(onConfirm: () => void) {
   const [holding, setHolding] = useState(false);
   const timerRef = useRef<number | null>(null);
 
@@ -24,12 +25,22 @@ export function useHoldToConfirm(onConfirm: () => void) {
     }, HOLD_TO_CONFIRM_MS);
   }, [cancel, onConfirm]);
 
+  useEffect(() => cancel, [cancel]);
+
+  return { holding, start, cancel };
+}
+
+/**
+ * Удержание кнопки для подтверждения опасного действия: мышь/палец — держать,
+ * клавиатура (Enter/Space) — подтверждение сразу.
+ */
+export function useHoldToConfirm(onConfirm: () => void) {
+  const { holding, start, cancel } = useHoldTimer(onConfirm);
+
   const confirmFromKeyboard = useCallback(() => {
     cancel();
     onConfirm();
   }, [cancel, onConfirm]);
-
-  useEffect(() => cancel, [cancel]);
 
   return {
     holding,

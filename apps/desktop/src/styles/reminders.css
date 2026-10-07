@@ -1,0 +1,311 @@
+/* --- Напоминания --- */
+
+.reminder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.reminder-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--control-bg);
+}
+
+.reminder-item.is-audio {
+  border: 1px solid var(--accent-soft-border);
+  background: color-mix(in srgb, var(--control-bg) 82%, var(--accent-soft-bg));
+}
+
+.reminder-kind {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft-bg);
+}
+
+.reminder-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reminder-time-block {
+  flex: none;
+  min-width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.reminder-time,
+.reminder-countdown {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.reminder-time {
+  color: var(--text-tertiary);
+}
+
+.reminder-countdown {
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft-bg);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.reminder-item-actions {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.reminder-item:hover .reminder-item-actions,
+.reminder-item:focus-within .reminder-item-actions {
+  opacity: 1;
+}
+
+.reminder-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reminder-input-row {
+  gap: 8px;
+}
+
+.reminder-audio-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.reminder-audio-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reminder-presets {
+  display: flex;
+  gap: 6px;
+}
+
+.preset-button {
+  flex: 1;
+  font-size: 10.5px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.preset-button:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.preset-button.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.preset-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.reminder-custom-time {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.reminder-calendar-field {
+  position: relative;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.reminder-date-button {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.reminder-date-button:hover {
+  background: var(--control-bg-hover);
+}
+
+.reminder-date-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.reminder-calendar-field .calendar-popover {
+  top: 34px;
+  right: auto;
+  width: min(326px, calc(100vw - 42px));
+}
+
+.reminder-calendar-field .calendar-popover.is-placement-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.reminder-time-picker {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+}
+
+.reminder-time-separator {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.time-stepper {
+  width: 34px;
+  display: grid;
+  grid-template-rows: 11px 14px 11px;
+  align-items: center;
+  justify-items: center;
+  color: var(--text-primary);
+}
+
+.time-stepper button {
+  width: 26px;
+  height: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.time-stepper button:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.time-stepper span {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.reminder-time-shortcuts {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.reminder-time-shortcuts button {
+  min-height: 25px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--control-bg) 74%, transparent);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-align: center;
+  cursor: pointer;
+}
+
+.reminder-time-shortcuts button:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.reminder-custom-time .preset-button {
+  flex: none;
+  padding: 6px 10px;
+}
+
+/* --- Пустые состояния --- */
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+

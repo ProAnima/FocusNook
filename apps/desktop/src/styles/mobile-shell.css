@@ -1,0 +1,530 @@
+/* --- Mobile shell (Android) --- */
+/* App.tsx рендерит на мобильных платформах отдельный MobileShell, а не
+   растягивает десктопный OverlayHeader/верхние вкладки (isDesktop из
+   is_desktop_platform, раздел 11 ТЗ — Android не должен быть "сайтом в
+   растянутом desktop-окне"): контекстный заголовок сверху вместо статичного
+   бренда + иконок, навигация снизу — большим пальцем удобнее, чем тянуться
+   в верхний угол за настройками. */
+.mobile-shell {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  height: calc(64px + env(safe-area-inset-top, 0px));
+  min-height: calc(64px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 20px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.mobile-topbar-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bottom-nav {
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--divider);
+  border-bottom: none;
+  gap: 0;
+}
+
+.bottom-nav .tab {
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 4px;
+  font-size: 11px;
+  border-radius: 10px;
+}
+
+.bottom-nav .tab.tab-active {
+  color: var(--accent);
+}
+
+/* Контент вкладок (День/Заметки/Напоминания/Настройки) общий для десктопа и
+   мобильного — на телефоне ему нужен масштаб побольше, чем в компактном
+   380x480 оверлее. */
+.mobile-shell .body {
+  padding: 20px 18px 18px;
+  font-size: 16px;
+}
+
+.mobile-shell .day-date {
+  font-size: 14px;
+}
+
+.mobile-shell .day-count {
+  font-size: 13px;
+}
+
+.mobile-shell .day-nav {
+  gap: 4px;
+}
+
+.mobile-shell .day-today-button {
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.mobile-shell .calendar-popover {
+  top: 48px;
+  padding: 9px;
+}
+
+.mobile-shell .calendar-day {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.mobile-shell .plan-item {
+  min-height: 64px;
+  padding: 12px 10px;
+  gap: 12px;
+}
+
+.mobile-shell .plan-checkbox {
+  width: 30px;
+  height: 30px;
+}
+
+.mobile-shell .plan-title {
+  font-size: 16px;
+}
+
+.mobile-shell .plan-progress {
+  min-width: 46px;
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.mobile-shell .plan-item-actions {
+  gap: 6px;
+  opacity: 1;
+}
+
+.mobile-shell .plan-item-actions .long-running-action {
+  display: none;
+}
+
+.mobile-shell .long-running-group {
+  gap: 2px;
+  padding: 6px 7px 5px;
+  border-radius: 8px;
+}
+
+.mobile-shell .long-running-heading {
+  font-size: 11px;
+}
+
+.mobile-shell .long-running-group .plan-item {
+  min-height: 50px;
+  padding: 8px 5px;
+  gap: 10px;
+}
+
+.mobile-shell .long-running-group .plan-checkbox {
+  width: 26px;
+  height: 26px;
+}
+
+.mobile-shell .long-running-group .plan-title {
+  font-size: 14px;
+}
+
+.mobile-shell .long-running-group .icon-button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.mobile-shell .long-running-group .plan-item-actions {
+  display: none;
+}
+
+.mobile-shell .plan-details-actions button {
+  min-height: 46px;
+  border-radius: 11px;
+}
+
+.mobile-shell .plan-long-running-toggle {
+  min-height: 64px;
+  border-radius: 14px;
+}
+
+.mobile-shell .icon-button,
+.mobile-shell .note-audio-play,
+.mobile-shell .time-stepper button {
+  min-width: 42px;
+  min-height: 42px;
+}
+
+.mobile-shell .icon-button svg,
+.mobile-shell .note-audio-play svg {
+  width: 17px;
+  height: 17px;
+}
+
+.mobile-shell .quick-add {
+  min-height: 52px;
+  padding: 12px 14px;
+}
+
+.mobile-shell .quick-add input,
+.mobile-shell .quick-add textarea {
+  font-size: 16px;
+}
+
+.mobile-shell .reminder-date-button {
+  height: 40px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.mobile-shell .reminder-time-picker {
+  height: 48px;
+}
+
+.mobile-shell .time-stepper span {
+  font-size: 15px;
+}
+
+.mobile-shell .time-stepper {
+  width: 50px;
+}
+
+.mobile-shell .reminder-custom-time .preset-button {
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.mobile-shell .note-item,
+.mobile-shell .reminder-item {
+  min-height: 66px;
+  padding: 14px;
+}
+
+.mobile-shell .note-item-actions,
+.mobile-shell .reminder-item-actions {
+  gap: 8px;
+  opacity: 1;
+}
+
+.mobile-shell .note-drag-handle {
+  width: 28px;
+  min-height: 44px;
+}
+
+.mobile-shell .note-folder-chip {
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.mobile-shell .notes-shell {
+  gap: 12px;
+  padding-left: 0;
+}
+
+.mobile-shell .note-folder-rail {
+  position: static;
+  width: 100%;
+  max-height: none;
+  display: block;
+  z-index: 20;
+}
+
+.mobile-shell .note-folder-rail-header,
+.mobile-shell .note-folder-scroll-row,
+.mobile-shell .note-folder-list,
+.mobile-shell .note-folder-rail > .note-folder-create:not(.note-folder-create-mobile) {
+  display: none;
+}
+
+.mobile-shell .note-folder-label {
+  display: none;
+}
+
+.mobile-shell .note-folder-mobile-toggle {
+  min-height: 52px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--control-bg) 88%, transparent);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.mobile-shell .note-folder-mobile-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-toggle small {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.mobile-shell .note-folder-mobile-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: rgba(5, 7, 14, 0.42);
+  backdrop-filter: blur(7px);
+}
+
+.mobile-shell .note-folder-mobile-sheet {
+  width: min(100%, 520px);
+  max-height: min(74vh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 14px 14px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 72%, rgba(255, 255, 255, 0.14));
+  background: color-mix(in srgb, #12172b 88%, var(--surface-gradient) 12%);
+  box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.mobile-shell .note-folder-mobile-grip {
+  width: 42px;
+  height: 4px;
+  align-self: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 48%, transparent);
+}
+
+.mobile-shell .note-folder-mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0 0;
+}
+
+.mobile-shell .note-folder-mobile-header div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mobile-shell .note-folder-mobile-header strong {
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.mobile-shell .note-folder-mobile-header span {
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-shell .note-folder-create-mobile {
+  position: static;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  padding: 7px 8px 7px 10px;
+  border-radius: 10px;
+}
+
+.mobile-shell .note-folder-mobile-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 1px 0;
+}
+
+.mobile-shell .note-folder-mobile-item {
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--control-bg) 84%, transparent);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.mobile-shell .note-folder-mobile-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-shell .note-folder-mobile-item small {
+  min-width: 26px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.mobile-shell .note-folder-mobile-item.is-active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.mobile-shell .note-folder-mobile-item.is-active small {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-shell .note-list {
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.mobile-shell .note-audio-card {
+  min-height: 56px;
+  gap: 12px;
+}
+
+.mobile-shell .note-audio-progress {
+  height: 24px;
+}
+
+.mobile-shell .record-button,
+.mobile-shell .note-submit-button {
+  min-width: 46px;
+  min-height: 46px;
+}
+
+.mobile-shell .note-folder-create {
+  min-height: 38px;
+}
+
+.mobile-shell .note-folder-create input {
+  font-size: 14px;
+}
+
+.mobile-shell .note-body,
+.mobile-shell .reminder-title {
+  font-size: 16px;
+}
+
+.mobile-shell .reminder-time {
+  font-size: 12px;
+}
+
+.mobile-shell .reminder-presets {
+  gap: 8px;
+}
+
+.mobile-shell .reminder-presets .preset-button,
+.mobile-shell .reminder-time-shortcuts button,
+.mobile-shell .reminder-audio-chip {
+  min-height: 44px;
+}
+
+.mobile-shell .settings-header {
+  font-size: 16px;
+}
+
+.mobile-shell .settings-group-label {
+  font-size: 12px;
+}
+
+.mobile-shell .toggle-row {
+  font-size: 14px;
+  padding: 12px 14px;
+}
+
+.mobile-shell .theme-option {
+  font-size: 12px;
+  padding: 12px 8px;
+}
+
+.mobile-shell .theme-row {
+  min-height: 66px;
+  grid-template-columns: 44px minmax(0, 1fr) auto 22px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.mobile-shell .theme-summary {
+  min-height: 62px;
+  grid-template-columns: 44px minmax(0, 1fr) 22px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.mobile-shell .theme-preview {
+  width: 42px;
+  height: 42px;
+}
+
+.mobile-shell .theme-row-title {
+  font-size: 14px;
+}
+
+.mobile-shell .theme-row-description {
+  font-size: 12px;
+}
+
+.mobile-shell .theme-row-kind {
+  font-size: 10px;
+}
+
+.mobile-shell .settings-select-trigger {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.mobile-shell .settings-select-option {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.mobile-shell .settings-hint {
+  font-size: 13px;
+}
+
+.mobile-shell .empty-state {
+  font-size: 14px;
+}
+

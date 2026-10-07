@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { commands, type PlanItem } from "./commands";
+import { useEventSubscription } from "./useEventSubscription";
 
-export function usePlanItems(planDate: string, autoRollOver = false) {
+/** Загрузка списка дня: опциональный перенос незавершённого, повторная загрузка после синхронизации. */
+function usePlanItemsData(planDate: string, autoRollOver: boolean) {
   const [items, setItems] = useState<PlanItem[]>([]);
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
 
@@ -27,84 +29,76 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
   }, [autoRollOver, planDate]);
 
   useEffect(() => refresh(), [refresh]);
+  const refreshWithoutRollOver = useCallback(() => void refresh(false), [refresh]);
+  useEventSubscription(commands.serverSync.onCompleted, refreshWithoutRollOver);
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    commands.serverSync
-      .onCompleted(() => {
-        refresh(false);
-      })
-      .then((cleanup) => {
-        unlisten = cleanup;
-      })
-      .catch(() => {});
-    return () => unlisten?.();
-  }, [refresh]);
+  return { items, setItems, loaded: loadedDate === planDate };
+}
 
-  const addItem = useCallback(async (title: string) => {
-    const created = await commands.planItems.create(title, planDate).catch(() => null);
-    if (created) setItems((prev) => [...prev, created]);
-  }, [planDate]);
+type SetItems = Dispatch<SetStateAction<PlanItem[]>>;
 
-  const toggleDone = useCallback(async (id: string) => {
-    const updated = await commands.planItems.toggleDone(id).catch(() => null);
-    if (updated) {
-      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
-    }
-  }, []);
+/** Выполняет команду и подменяет задачу в списке результатом; ошибка команды даёт null. */
+function usePlanItemUpdater(setItems: SetItems) {
+  return useCallback(
+    async (run: () => Promise<PlanItem>) => {
+      const updated = await run().catch(() => null);
+      if (updated) setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      return updated;
+    },
+    [setItems],
+  );
+}
 
-  const cycleProgress = useCallback(async (id: string) => {
-    const updated = await commands.planItems.cycleProgress(id).catch(() => null);
-    if (updated) {
-      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
-    }
-  }, []);
+/** Применяет результат команды и убирает задачу из списка, если она ушла на другой день. */
+function usePlanItemKeepingDate(setItems: SetItems) {
+  return useCallback(
+    async (id: string, run: () => Promise<PlanItem>, staysVisible: (item: PlanItem) => boolean) => {
+      const updated = await run().catch(() => null);
+      if (updated) {
+        setItems((prev) =>
+          staysVisible(updated) ? prev.map((item) => (item.id === id ? updated : item)) : prev.filter((item) => item.id !== id),
+        );
+      }
+      return updated;
+    },
+    [setItems],
+  );
+}
 
-  const toggleDeferred = useCallback(async (id: string) => {
-    const updated = await commands.planItems.toggleDeferred(id).catch(() => null);
-    if (updated) {
-      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
-    }
-  }, []);
+export function usePlanItems(planDate: string, autoRollOver = false) {
+  const { items, setItems, loaded } = usePlanItemsData(planDate, autoRollOver);
+  const update = usePlanItemUpdater(setItems);
 
-  const toggleLongRunning = useCallback(async (id: string) => {
-    const updated = await commands.planItems.toggleLongRunning(id).catch(() => null);
-    if (updated) {
-      setItems((prev) =>
-        updated.isLongRunning || updated.planDate === planDate
-          ? prev.map((item) => (item.id === id ? updated : item))
-          : prev.filter((item) => item.id !== id),
-      );
-    }
-    return updated;
-  }, [planDate]);
+  const updateKeepingDate = usePlanItemKeepingDate(setItems);
 
-  const moveToDate = useCallback(async (id: string, targetDate: string) => {
-    const updated = await commands.planItems.moveToDate(id, targetDate).catch(() => null);
-    if (updated) {
-      setItems((prev) =>
-        updated.planDate === planDate
-          ? prev.map((item) => (item.id === id ? updated : item))
-          : prev.filter((item) => item.id !== id),
-      );
-    }
-  }, [planDate]);
+  const addItem = useCallback(
+    async (title: string) => {
+      const created = await commands.planItems.create(title, planDate).catch(() => null);
+      if (created) setItems((prev) => [...prev, created]);
+    },
+    [planDate, setItems],
+  );
 
-  const deleteItem = useCallback(async (id: string) => {
-    const previous = items;
-    setItems((prev) => prev.filter((item) => item.id !== id));
-    await commands.planItems.delete(id).catch(() => setItems(previous));
-  }, [items]);
+  const deleteItem = useCallback(
+    async (id: string) => {
+      const previous = items;
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      await commands.planItems.delete(id).catch(() => setItems(previous));
+    },
+    [items, setItems],
+  );
 
   return {
     items,
-    loaded: loadedDate === planDate,
+    loaded,
     addItem,
-    toggleDone,
-    cycleProgress,
-    toggleDeferred,
-    toggleLongRunning,
-    moveToDate,
     deleteItem,
+    toggleDone: (id: string) => void update(() => commands.planItems.toggleDone(id)),
+    cycleProgress: (id: string) => void update(() => commands.planItems.cycleProgress(id)),
+    toggleDeferred: (id: string) => void update(() => commands.planItems.toggleDeferred(id)),
+    toggleLongRunning: (id: string) =>
+      updateKeepingDate(id, () => commands.planItems.toggleLongRunning(id), (item) => item.isLongRunning || item.planDate === planDate),
+    moveToDate: (id: string, targetDate: string) =>
+      void updateKeepingDate(id, () => commands.planItems.moveToDate(id, targetDate), (item) => item.planDate === planDate),
   };
 }

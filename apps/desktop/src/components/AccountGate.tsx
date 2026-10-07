@@ -12,6 +12,37 @@ interface AccountGateProps {
   onSignIn: (id: string, password: string) => Promise<void>;
 }
 
+function AccountList({
+  accounts,
+  selectedId,
+  onSelect,
+}: {
+  accounts: Profile[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <div className="account-list" role="radiogroup" aria-label={t("account.choose")}>
+      {accounts.filter((account) => account.accountConfigured).map((account) => (
+        <button
+          key={account.id}
+          type="button"
+          role="radio"
+          aria-checked={selectedId === account.id}
+          className={`account-option ${selectedId === account.id ? "is-active" : ""}`}
+          onClick={() => onSelect(account.id)}
+        >
+          <span className="account-avatar" style={{ background: account.avatarColor }}>
+            {account.displayName.charAt(0).toUpperCase()}
+          </span>
+          <span><strong>{account.displayName}</strong><small>{account.email}</small></span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function AccountGate({
   accounts,
   activeAccount,
@@ -60,23 +91,7 @@ export function AccountGate({
         {createMode && <p>{t("account.setupHint")}</p>}
         <form onSubmit={(event) => void submit(event)}>
           {!createMode && (
-            <div className="account-list" role="radiogroup" aria-label={t("account.choose")}>
-              {accounts.filter((account) => account.accountConfigured).map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selectedId === account.id}
-                  className={`account-option ${selectedId === account.id ? "is-active" : ""}`}
-                  onClick={() => setSelectedId(account.id)}
-                >
-                  <span className="account-avatar" style={{ background: account.avatarColor }}>
-                    {account.displayName.charAt(0).toUpperCase()}
-                  </span>
-                  <span><strong>{account.displayName}</strong><small>{account.email}</small></span>
-                </button>
-              ))}
-            </div>
+            <AccountList accounts={accounts} selectedId={selectedId} onSelect={setSelectedId} />
           )}
           {createMode && (
             <>

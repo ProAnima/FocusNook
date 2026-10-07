@@ -78,6 +78,38 @@ function DayHeader({
   );
 }
 
+function DayItemDetails({
+  detailsItem,
+  plan,
+  selectedDate,
+  onClose,
+}: {
+  detailsItem: PlanItem;
+  plan: ReturnType<typeof usePlanItems>;
+  selectedDate: string;
+  onClose: () => void;
+}) {
+  return (
+    <PlanItemDetailsDialog
+      item={plan.items.find((item) => item.id === detailsItem.id) ?? detailsItem}
+      onToggleLongRunning={() => {
+        void plan.toggleLongRunning(detailsItem.id).then((updated) => {
+          if (updated && !updated.isLongRunning && updated.planDate !== selectedDate) {
+            onClose();
+          }
+        });
+      }}
+      onCycleProgress={() => void plan.cycleProgress(detailsItem.id)}
+      onToggleDeferred={() => void plan.toggleDeferred(detailsItem.id)}
+      onDelete={() => {
+        void plan.deleteItem(detailsItem.id);
+        onClose();
+      }}
+      onClose={onClose}
+    />
+  );
+}
+
 export function DayView() {
   const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -139,21 +171,10 @@ export function DayView() {
       )}
       <PlanItemList loaded={plan.loaded} items={plan.items} actions={actions} />
       {detailsItem && (
-        <PlanItemDetailsDialog
-          item={plan.items.find((item) => item.id === detailsItem.id) ?? detailsItem}
-          onToggleLongRunning={() => {
-            void plan.toggleLongRunning(detailsItem.id).then((updated) => {
-              if (updated && !updated.isLongRunning && updated.planDate !== selectedDate) {
-                setDetailsItem(null);
-              }
-            });
-          }}
-          onCycleProgress={() => void plan.cycleProgress(detailsItem.id)}
-          onToggleDeferred={() => void plan.toggleDeferred(detailsItem.id)}
-          onDelete={() => {
-            void plan.deleteItem(detailsItem.id);
-            setDetailsItem(null);
-          }}
+        <DayItemDetails
+          detailsItem={detailsItem}
+          plan={plan}
+          selectedDate={selectedDate}
           onClose={() => setDetailsItem(null)}
         />
       )}

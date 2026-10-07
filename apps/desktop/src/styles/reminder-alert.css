@@ -1,0 +1,121 @@
+/* --- Окно напоминания (reminder-alert) --- */
+
+.alert-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 16px;
+  background: var(--surface-gradient);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+}
+
+.alert-icon {
+  color: var(--accent);
+}
+
+.alert-title {
+  margin: 0;
+  max-width: 100%;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+.alert-actions {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.alert-action {
+  flex: 1;
+  padding: 8px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.alert-action:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.alert-action-primary {
+  background: var(--accent-soft-bg);
+  border-color: var(--accent-soft-border);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.plan-item,
+.note-item,
+.reminder-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.plan-item::before,
+.note-item::before,
+.reminder-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--danger) 34%, transparent), transparent 72%),
+    color-mix(in srgb, var(--danger-soft-bg) 82%, transparent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  pointer-events: none;
+}
+
+.plan-item > *,
+.note-item > *,
+.reminder-item > * {
+  position: relative;
+  z-index: 1;
+}
+
+.plan-item.is-delete-holding,
+.note-item.is-delete-holding,
+.reminder-item.is-delete-holding {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--divider));
+  color: var(--text-primary);
+}
+
+.plan-item.is-delete-holding::before,
+.note-item.is-delete-holding::before,
+.reminder-item.is-delete-holding::before {
+  opacity: 1;
+  transform: scaleX(1);
+  transition:
+    opacity 100ms ease,
+    transform 900ms linear;
+}
+
+.hold-delete-button {
+  touch-action: none;
+}
+
+.is-delete-holding .hold-delete-button {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: color-mix(in srgb, var(--danger-soft-bg) 74%, transparent);
+  color: var(--danger);
+}
+

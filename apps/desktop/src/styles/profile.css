@@ -1,0 +1,170 @@
+/* --- Переключатель профиля (раздел 15 ТЗ) --- */
+
+.profile-switcher {
+  position: relative;
+}
+
+.profile-avatar {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: -4px;
+  z-index: 30;
+  min-width: 178px;
+  max-width: 228px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 70%, rgba(255, 255, 255, 0.18));
+  background: color-mix(in srgb, #101321 92%, var(--accent) 8%);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.44), 0 2px 8px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(22px) saturate(1.15);
+  /* Меню — не часть drag-зоны и не должно наследовать её user-select:none
+     ради текстового поля создания профиля внутри (см. .quick-add input). */
+  cursor: default;
+}
+
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu-item:hover {
+  background: var(--control-bg-hover);
+}
+
+.profile-menu-item.is-active {
+  background: var(--accent-soft-bg);
+  color: var(--accent);
+}
+
+.profile-menu-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.profile-menu-new {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.profile-menu-new input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.icon-button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.icon-button:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.icon-button.is-active {
+  background: var(--accent-soft-bg);
+  border-color: var(--accent-soft-border);
+  color: var(--accent);
+}
+
+.tabs {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 14px 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab-active {
+  background: var(--control-bg);
+  color: var(--text-primary);
+}
+
+.body {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+

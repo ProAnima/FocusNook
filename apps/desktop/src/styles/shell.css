@@ -1,0 +1,341 @@
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  /* Виджет ведёт себя как нативное окно, не веб-страница: без этого клик-протяг
+     по любой карточке (заметка, задача, напоминание) уходит в text-selection
+     вместо обычного клика. Поля ввода ниже явно возвращают выделение обратно. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+:root {
+  --desktop-shell-width: 100%;
+}
+
+.desktop-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.desktop-stage .overlay-shell {
+  pointer-events: auto;
+  width: min(100%, var(--desktop-shell-width));
+}
+
+.desktop-stage[data-folder-rail-side="right"] {
+  padding: 0;
+}
+
+.window-resize-edge,
+.window-resize-grip {
+  z-index: 120;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.window-resize-edge {
+  position: fixed;
+  border: 0;
+  background: transparent;
+}
+
+.resize-north,
+.resize-south {
+  right: 10px;
+  left: 10px;
+  height: 7px;
+}
+
+.resize-north {
+  top: 0;
+  cursor: n-resize;
+}
+
+.resize-south {
+  bottom: 0;
+  cursor: s-resize;
+}
+
+.resize-east,
+.resize-west {
+  top: 10px;
+  bottom: 10px;
+  width: 7px;
+}
+
+.resize-east {
+  right: 0;
+  cursor: e-resize;
+}
+
+.resize-west {
+  left: 0;
+  cursor: w-resize;
+}
+
+.resize-northeast,
+.resize-northwest,
+.resize-southwest {
+  width: 14px;
+  height: 14px;
+}
+
+.resize-northeast {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+
+.resize-northwest {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+
+.resize-southwest {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+
+.window-resize-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 7px 0;
+  background: transparent;
+  cursor: se-resize;
+}
+
+.window-resize-grip span {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 12px;
+  height: 12px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  background: color-mix(in srgb, var(--text-tertiary) 72%, transparent);
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.window-resize-grip:hover span,
+.window-resize-grip:focus-visible span {
+  background: var(--accent);
+  transform: scale(1.08);
+}
+
+.window-resize-grip:focus-visible {
+  outline: 1px solid var(--accent-soft-border);
+  outline-offset: -1px;
+}
+
+/* Окно остаётся transparent на уровне Tauri только ради чистых скруглённых
+   углов (без этого показался бы квадратный "огрызок" по краям карточки).
+   Сама карточка ниже — полностью непрозрачная поверхность. */
+.overlay-shell {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-gradient);
+  border: 1px solid color-mix(in srgb, var(--surface-border) 42%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.desktop-stage .overlay-shell {
+  overflow: visible;
+}
+
+.live-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--shader-opacity, 0);
+  mix-blend-mode: var(--shader-blend-mode, screen);
+}
+
+.live-background-canvas,
+.live-background-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.live-background-canvas {
+  display: block;
+}
+
+.live-background-fallback {
+  background:
+    radial-gradient(circle at 22% 28%, var(--live-bg-a), transparent 42%),
+    radial-gradient(circle at 78% 68%, var(--live-bg-b), transparent 46%),
+    conic-gradient(from 135deg at 50% 50%, transparent, var(--live-bg-c), transparent);
+  filter: blur(34px) saturate(1.16);
+  opacity: 0.54;
+  animation: live-bg-fallback-drift 24s ease-in-out infinite alternate;
+}
+
+/* "Живой" фон: два размытых пятна, которые медленно дрейфуют и чуть смещаются
+   за курсором (--pointer-x/--pointer-y, см. useLiveBackgroundPointer.ts).
+   На system/light/dark --bg-blob-* не определены — var(..., transparent)
+   делает пятна невидимыми, так что это правило ничего не меняет визуально
+   для обычных тем и не требует отдельного gate по data-theme. z-index:0 +
+   position:relative на .drag-zone/.tabs/.body (ниже) держат реальный контент
+   выше этого слоя однозначно, не полагаясь на порядок flex-стекинга. */
+.overlay-shell::before,
+.overlay-shell::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: var(--bg-blob-opacity, 0.4);
+  pointer-events: none;
+  mix-blend-mode: var(--bg-blob-blend, normal);
+  will-change: transform;
+}
+
+.overlay-shell::before {
+  top: -22%;
+  left: -16%;
+  width: 55%;
+  aspect-ratio: 1;
+  background: var(--bg-blob-a, transparent);
+  translate: calc(var(--pointer-x, 0) * 14px) calc(var(--pointer-y, 0) * 14px);
+  animation: live-bg-drift-a 22s ease-in-out infinite;
+}
+
+.overlay-shell::after {
+  bottom: -24%;
+  right: -18%;
+  width: 62%;
+  aspect-ratio: 1;
+  background: var(--bg-blob-b, transparent);
+  translate: calc(var(--pointer-x, 0) * -10px) calc(var(--pointer-y, 0) * -10px);
+  animation: live-bg-drift-b 27s ease-in-out infinite;
+}
+
+.desktop-stage .overlay-shell::before,
+.desktop-stage .overlay-shell::after {
+  display: none;
+}
+
+@keyframes live-bg-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6%, 8%) scale(1.1);
+  }
+}
+
+@keyframes live-bg-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-5%, -7%) scale(1.08);
+  }
+}
+
+@keyframes live-bg-fallback-drift {
+  0% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(2%, 1%, 0) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-shell::before,
+  .overlay-shell::after,
+  .live-background-fallback {
+    animation: none;
+    translate: none;
+  }
+}
+
+/* data-tauri-drag-region на самом header — вся полоса тянет окно, не только
+   надпись (Tauri сам исключает клики по кнопкам внутри). Без user-select:none
+   браузер трактует область как выделяемый текст: курсор становится I-beam,
+   drag-жест уходит в text-selection вместо нативного перетаскивания окна. */
+.drag-zone {
+  position: relative;
+  z-index: 40;
+  height: 34px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--divider);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
