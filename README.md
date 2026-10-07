@@ -198,8 +198,17 @@ Mobile stack:
 ├── plugins/                    custom Tauri plugins (reminder alarms, ...)
 ├── docs/
 │   ├── assets/                README and brand assets
+│   ├── code-structure.md      module map and where new code goes
+│   ├── debugging.md           run, logs, data locations, troubleshooting
+│   ├── agent-roadmap.md       architecture roadmap and multi-agent protocol
+│   ├── releases/              release runbooks and evidence templates
+│   ├── store-assets/          store icon
+│   ├── store-listing/         RuStore / AppGallery listing drafts
+│   ├── store-release-checklist.md
 │   ├── sync-attachments.md    attachment sync contract
 │   └── v1-release-plan.md     first-release checklist
+├── scripts/                    check.ps1 (all quality gates), metrics.py (architecture metrics)
+├── .github/workflows/ci.yml    CI: frontend, server, desktop Rust
 ├── AGENTS.md                   AI-agent engineering contract
 ├── LICENSE                     restrictive source-available license
 └── README.md
@@ -209,10 +218,13 @@ Mobile stack:
 
 Requirements:
 
-- Node.js.
-- npm.
-- Rust toolchain.
+- Node.js 22.13+ (CI uses 22) and npm.
+- Rust toolchain with the `clippy` and `rustfmt` components
+  (`rustup component add clippy rustfmt`).
 - Tauri platform prerequisites for Windows.
+- A full Perl on `PATH` (for example Strawberry Perl) to build the desktop
+  crate: SQLCipher is compiled with vendored OpenSSL. The Perl bundled with Git
+  for Windows is not sufficient. `apps/server` does not need it.
 
 Install and run the desktop app:
 
@@ -239,7 +251,14 @@ npm run tauri build
 
 ## Verification
 
-Before considering a change ready:
+Before considering a change ready, run everything with one command:
+
+```powershell
+scripts/check.ps1            # frontend + desktop Rust + server
+scripts/check.ps1 -Only frontend
+```
+
+or step by step:
 
 ```powershell
 cd apps/desktop
@@ -248,9 +267,17 @@ npx tsc --noEmit
 npm test
 
 cd src-tauri
-cargo clippy --all-targets
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+When the sync server or the sync contract changes, also run
+`cargo clippy --all-targets -- -D warnings` and `cargo test` in `apps/server`. The
+same checks run in CI (`.github/workflows/ci.yml`). Size budgets and layer rules
+are described in [AGENTS.md](AGENTS.md); the module map is in
+[docs/code-structure.md](docs/code-structure.md); logs, data locations and
+debugging tips are in [docs/debugging.md](docs/debugging.md).
 
 Native overlay behavior must also be checked manually on Windows:
 
@@ -295,13 +322,15 @@ A detailed, working checklist for the first release lives in
 
 ### Required for v1 (first release)
 
-- Create and back up the permanent Android release signing identity.
-- Deploy the prepared VDS migration, nginx routes, privacy policy, and user
-  agreement with approved operator details.
-- VDS production hardening: rotate the bootstrap admin token, verify a real
-  off-box backup restore, and add external uptime monitoring.
-- One recorded end-to-end desktop + Android sync pass against the same VDS
-  server.
+Open items (details and evidence in
+[docs/v1-release-plan.md](docs/v1-release-plan.md)):
+
+- Operator/legal inputs, legal review of the privacy policy and terms, and the
+  permanent Android upload signing identity with encrypted backups.
+- VDS follow-ups after the 2026-07-26 hardened rollout: rotate the bootstrap
+  admin token, add an external uptime monitor, set backup retention.
+- One recorded end-to-end desktop + Android sync pass against the same live
+  VDS server, including the long-running task marker and audio.
 - Signed-candidate acceptance on Huawei/HMS and RuStore devices, real store
   screenshots, owner declarations, and moderation approval.
 

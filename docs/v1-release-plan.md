@@ -44,10 +44,36 @@ letting it drift the way the old Iteration 0-3 roadmap did.
 - `disconnect_provider` never revokes the provider-side OAuth token, only the
   local copy. Moot for v1 now that the Google Drive / Yandex Disk rows are
   hidden (see Shipped); revisit only if those adapters ship later.
-- Large files past the project's own ~250-300 line budget
-  (`NotesView.tsx` 705, `SettingsPanel.tsx` 664, `server_sync.rs` 2048,
-  `routes.rs` 1222 lines) — worth splitting for maintainability, not a
-  release blocker.
+- Code-size refactor (budgets in [AGENTS.md](../AGENTS.md), map in
+  [code-structure.md](code-structure.md)). Done: the whole frontend (settings,
+  reminders, notes, hooks, `commands`, translations, CSS), the server `routes/`,
+  and desktop Rust (`server_sync/`, `commands/` + `shell.rs` out of `lib.rs`,
+  `db/`, `profiles/`). Intentionally left: parked `cloud_sync.rs` (post-v1,
+  behind the `cloud-providers` feature), `plan_items.rs` (~315 production lines,
+  marginally over budget) and test-heavy modules whose production code is within
+  budget.
+- Quality gates are one command (`scripts/check.ps1`) and CI
+  (`.github/workflows/ci.yml`, **not yet run on GitHub** — verify the first run).
+  Desktop Rust uses leveled logging to a rotating file; the log file and the
+  Android Logcat output have not yet been checked on a running app or device.
+- Android-gated Rust code (`#[cfg(target_os = "android")]`) was moved during the
+  refactor but cannot be compiled on the developer machine; confirm with a real
+  Android build before release (it is part of the signed-candidate acceptance).
+
+## Security design review (2026-10-07) — owner decision needed
+
+- **Sync media key is derivable by the server operator.** The client sends the
+  account password to the VDS, and the payload/attachment key is
+  `Argon2(password, sha256(email))` (`blob_crypto.rs::derive_media_key`), so
+  "client-side encryption" does not protect data from whoever runs the server.
+  There is also a silent single-SHA-256 fallback when Argon2 fails, and AES-GCM
+  nonces come from UUIDv4 bytes (some bits fixed). Public texts promise
+  client-side encryption, not operator blindness, so nothing is falsely
+  claimed — but decide before release whether to fix (requires a protocol and
+  data migration) or to keep and describe precisely. Card X1 in
+  [agent-roadmap.md](agent-roadmap.md).
+- Remaining architecture work is planned for a multi-agent team in
+  [agent-roadmap.md](agent-roadmap.md) (metrics: `python scripts/metrics.py`).
 
 ## Explicitly parked for post-v1 (code exists, not on the critical path)
 
@@ -154,7 +180,7 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   for the `/v1/admin/monitor` API itself. Fixed with an `esc()` helper on
   every user-controlled field rendered into the table.
 - **Rate-limit bypass via spoofed `X-Forwarded-For`.**
-  [routes.rs::client_ip](../apps/server/src/routes.rs) trusted the first
+  [routes/helpers.rs::client_ip](../apps/server/src/routes/helpers.rs) trusted the first
   (client-controlled) XFF value; nginx appends the real address rather than
   replacing it (`$proxy_add_x_forwarded_for`), so login/registration
   lockouts were trivially bypassable. Now prefers `X-Real-IP`, which nginx
@@ -173,7 +199,7 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   hard error instead.
 - **Argon2 blocking the Tokio runtime.** `hash_password`/`verify_password`
   ran synchronously inside async Axum handlers
-  ([routes.rs](../apps/server/src/routes.rs)), which could starve all
+  ([routes/accounts.rs](../apps/server/src/routes/accounts.rs)), which could starve all
   request handling under concurrent login/registration load. Now wrapped in
   `tokio::task::spawn_blocking`.
 
