@@ -88,7 +88,7 @@ impl Hlc {
 // Живёt в Tauri managed state как HlcClockState(Mutex<HlcClock>), по образцу
 // db::Db(Mutex<Connection>). Внутреннего второго Mutex в самом HlcClock не
 // заводили: он и так целиком за внешним Mutex (это нужно для переключения
-// профиля — см. lib.rs::switch_vault, который обязан пересоздать HlcClock для
+// профиля — см. commands/profiles.rs::switch_vault, который обязан пересоздать HlcClock для
 // нового профиля, а не только подменить Connection), второй уровень
 // блокировки был бы лишним.
 pub struct HlcClock {

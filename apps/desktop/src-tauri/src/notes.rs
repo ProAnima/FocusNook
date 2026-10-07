@@ -347,7 +347,7 @@ pub fn delete(
     if let Some(filename) = audio_path {
         sync_blobs::mark_deleted(conn, profile_id, &filename)?;
         if let Err(e) = fs::remove_file(audio_dir.join(&filename)) {
-            eprintln!("notes: не удалось удалить аудиофайл {filename}: {e}");
+            log::warn!("не удалось удалить аудиофайл {filename}: {e}");
         }
     }
     Ok(())

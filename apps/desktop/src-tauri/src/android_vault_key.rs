@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 // "vault-key": сам плагин ничего не знает про vault-key/SQLCipher/hex-формат,
 // он только шифрует/дешифрует произвольный blob под alias'ом (см. комментарий
 // в plugins/tauri-plugin-secure-storage/src/lib.rs). Та же граница, что у
-// db.rs::vault_key() на десктопе, только вместо keyring::Entry — этот файл.
+// db::vault_key::vault_key() на десктопе, только вместо keyring::Entry — этот файл.
 
 // Совпадает буквально с KeystoreHelper.KEY_UNAVAILABLE_PREFIX в
 // plugins/tauri-plugin-secure-storage/android/.../KeystoreHelper.kt — Tauri

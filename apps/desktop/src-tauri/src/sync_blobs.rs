@@ -109,6 +109,8 @@ pub fn upsert_local_blob(
     Ok(())
 }
 
+// Used only by tests; sync code reads blobs through the pending_uploads* helpers.
+#[cfg(test)]
 pub fn blob_for_audio(
     conn: &Connection,
     profile_id: &str,
@@ -133,6 +135,7 @@ pub fn blob_for_audio(
     Ok(record)
 }
 
+#[cfg(any(test, feature = "cloud-providers"))]
 pub fn pending_uploads(conn: &Connection, profile_id: &str) -> Result<Vec<BlobRecord>, String> {
     let mut stmt = conn
         .prepare(
@@ -239,6 +242,8 @@ pub fn pending_downloads(conn: &Connection, profile_id: &str) -> Result<Vec<Stri
     Ok(rows)
 }
 
+// Used only by tests; production code goes through is_uploaded_to.
+#[cfg(test)]
 pub fn is_uploaded(conn: &Connection, profile_id: &str, blob_id: &str) -> Result<bool, String> {
     let uploaded_at = conn
         .query_row(

@@ -609,7 +609,7 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
                 let _ = app.emit("cloud-sync-completed", ());
             }
             Err(err) => {
-                eprintln!("cloud-sync: best-effort sync failed: {err}");
+                log::warn!("best-effort sync failed: {err}");
                 let _ = app.emit("cloud-sync-failed", err);
             }
         }

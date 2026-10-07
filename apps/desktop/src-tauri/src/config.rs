@@ -13,12 +13,16 @@ use std::path::Path;
 const CONFIG_FILENAME: &str = "sync_providers.json";
 pub const DEFAULT_SERVER_ENDPOINT: &str = "https://focus.proanima.net";
 
+// Credentials are only read by the cloud-providers feature (oauth.rs, cloud_sync.rs);
+// the default build still parses them so sync_providers.json stays valid.
+#[cfg_attr(not(feature = "cloud-providers"), allow(dead_code))]
 #[derive(Clone)]
 pub struct ProviderCredentials {
     pub client_id: String,
     pub client_secret: Option<String>,
 }
 
+#[cfg_attr(not(feature = "cloud-providers"), allow(dead_code))]
 #[derive(Default)]
 pub struct SyncProvidersConfig {
     pub google: Option<ProviderCredentials>,

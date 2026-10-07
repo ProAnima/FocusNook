@@ -72,7 +72,7 @@ fn check_due_reminders(app: &tauri::AppHandle) {
     if due.is_empty() {
         return;
     }
-    eprintln!("alerts: найдено due-напоминаний: {}", due.len());
+    log::debug!("найдено due-напоминаний: {}", due.len());
 
     if let Ok(conn) = db.0.lock() {
         for reminder in &due {
@@ -101,7 +101,7 @@ pub fn show_next_alert_if_idle(app: &tauri::AppHandle) {
         *current = Some(reminder);
     }
     if let Err(err) = open_alert_window(app) {
-        eprintln!("alerts: не удалось открыть окно напоминания: {err}");
+        log::warn!("не удалось открыть окно напоминания: {err}");
     }
 }
 
@@ -121,7 +121,7 @@ fn open_alert_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .skip_taskbar(true)
     .center()
     .build()?;
-    eprintln!("alerts: окно напоминания открыто");
+    log::debug!("окно напоминания открыто");
     let _ = window.set_focus();
     Ok(())
 }
@@ -130,7 +130,7 @@ fn open_alert_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 // отдельное окно (мобильная модель Tauri — одна Activity/WebView на
 // приложение, второе WebviewWindow как на десктопе не открыть). Само
 // уведомление и AlarmManager-планирование теперь реализованы в плагине
-// reminder-alarm (см. lib.rs::schedule_android_alarm) — эта функция здесь
+// reminder-alarm (см. alarms::schedule_android_alarm) — эта функция здесь
 // по сути недостижима на Android (очередь AlertState никогда не заполняется
 // без spawn_scheduler, см. выше), оставлена как безопасный no-op на случай,
 // если resolve_current_alert всё же вызовется.

@@ -79,6 +79,8 @@ tauri-plugin-secure-storage = { path = "../../../plugins/tauri-plugin-secure-sto
 # в Cargo.toml, чтобы называть crate напрямую в коде (spawn_blocking для
 # блокирующего tiny_http::Server::recv, см. oauth.rs).
 tokio = { version = "1", features = ["rt", "macros"] }
+log = "0.4"
+tauri-plugin-log = "2"
 
 # SQLCipher is used on both desktop and Android. The Windows-hosted Android
 # build needs the Git Perl/Bash + NDK environment prepared by
