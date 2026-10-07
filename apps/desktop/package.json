@@ -5,6 +5,9 @@
   "description": "FocusNook desktop overlay app.",
   "license": "SEE LICENSE IN ../../LICENSE",
   "type": "module",
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
