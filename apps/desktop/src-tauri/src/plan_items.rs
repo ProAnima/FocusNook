@@ -2,6 +2,9 @@ use crate::sync_log::{self, HlcClock};
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;
 
+mod rename;
+pub use rename::rename;
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanItemDto {
@@ -389,6 +392,37 @@ mod tests {
     fn operation_count(conn: &Connection) -> i64 {
         conn.query_row("SELECT COUNT(*) FROM sync_operations", [], |r| r.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn rename_preserves_state_and_records_title_patch() {
+        let mut conn = setup_conn();
+        let mut clock = test_clock();
+        let item = create(&mut conn, &mut clock, PROFILE, "Task", TODAY).unwrap();
+        toggle_long_running(&mut conn, &mut clock, PROFILE, &item.id).unwrap();
+        cycle_progress(&mut conn, &mut clock, PROFILE, &item.id).unwrap();
+        let renamed = rename(&mut conn, &mut clock, PROFILE, &item.id, "  Updated  ").unwrap();
+        assert_eq!(renamed.title, "Updated");
+        assert_eq!(renamed.status, "partial");
+        assert_eq!(renamed.progress_percent, Some(25));
+        assert!(renamed.is_long_running);
+        assert_eq!(renamed.plan_date, TODAY);
+        let patch: String = conn
+            .query_row(
+                "SELECT patch FROM sync_operations WHERE entity_id = ?1 ORDER BY hlc DESC LIMIT 1",
+                params![item.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&patch).unwrap(),
+            serde_json::json!({"title": "Updated"})
+        );
+        let count = operation_count(&conn);
+        assert!(rename(&mut conn, &mut clock, PROFILE, &item.id, "  ").is_err());
+        assert!(rename(&mut conn, &mut clock, PROFILE, "missing", "Title").is_err());
+        assert_eq!(operation_count(&conn), count);
+        assert_eq!(fetch(&conn, &item.id).unwrap().title, "Updated");
     }
 
     #[test]

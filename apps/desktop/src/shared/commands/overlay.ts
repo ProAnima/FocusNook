@@ -23,6 +23,15 @@ async function resolveFolderRailSide(positionX?: number): Promise<FolderRailSide
 }
 
 export const overlayCommands = {
+  async resizeZenWindow(height: number): Promise<void> {
+    await invoke("resize_zen_window", { height });
+  },
+  async getZenMode(): Promise<boolean> {
+    return invoke<boolean>("get_zen_mode");
+  },
+  async setZenMode(enabled: boolean): Promise<void> {
+    await invoke("set_zen_mode", { enabled });
+  },
   // Rust хранит front/back как единственный источник правды и сам решает,
   // на что переключиться — и клик, и глобальный хоткей идут сюда же.
   async toggle(): Promise<boolean> {
@@ -66,13 +75,13 @@ export const overlayCommands = {
   async startResize(direction: ResizeDirection): Promise<void> {
     await getCurrentWindow().startResizeDragging(direction);
   },
-  async resizeBy(widthDelta: number, heightDelta: number): Promise<void> {
+  async resizeBy(widthDelta: number, heightDelta: number, zenMode = false): Promise<void> {
     const win = getCurrentWindow();
     const size = await win.innerSize();
     const scale = await win.scaleFactor();
     const logical = size.toLogical(scale);
     const width = Math.min(520, Math.max(280, logical.width + widthDelta));
-    const height = Math.min(1200, Math.max(260, logical.height + heightDelta));
+    const height = Math.min(zenMode ? 180 : 1200, Math.max(zenMode ? 72 : 260, logical.height + heightDelta));
     await win.setSize(new LogicalSize(width, height));
   },
 };

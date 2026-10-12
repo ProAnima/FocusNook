@@ -1,0 +1,21 @@
+.zen-drag-zone { position: relative; z-index: 40; display: flex; justify-content: flex-end; flex: none; height: 22px; padding: 1px 5px; }
+.zen-drag-zone .icon-button { width: 20px; height: 20px; padding: 0; }
+.zen-drag-zone .icon-button svg { flex-shrink: 0; }
+.desktop-stage.is-zen .body { padding: 0 10px 7px; }
+.zen-view { position: relative; gap: 4px; min-height: 0; }
+.zen-current { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--divider) transparent; }
+.zen-current .plan-item { gap: 5px 8px; padding: 2px 4px; }
+.zen-current .plan-title { font-size: 14px; line-height: 1.4; }
+.zen-current .plan-item-actions { justify-content: flex-end; }
+.zen-finished { margin: 10px 0; text-align: center; color: var(--text-secondary); }
+.zen-next { display: flex; align-items: center; justify-content: center; flex: none; gap: 5px; padding: 3px 12px; border-radius: 6px; border: 1px solid var(--accent-soft-border); background: var(--accent-soft-bg); color: var(--accent); font: inherit; font-size: 11px; cursor: pointer; }
+.zen-next:hover { background: var(--control-bg-hover); }
+.plan-rename-form { display: flex; flex-direction: column; gap: 12px; }
+.plan-rename-form label { display: flex; flex-direction: column; gap: 8px; color: var(--text-primary); }
+.plan-rename-form input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--divider); border-radius: 6px; background: var(--control-bg); color: var(--text-primary); font: inherit; }
+.is-zen .plan-details-backdrop { position: fixed; padding: 4px; }
+.is-zen .plan-details-dialog { padding: 24px 10px 10px; border-radius: 8px; }
+.is-zen .plan-details-close { top: 3px; right: 3px; }
+.is-zen .plan-rename-form { gap: 7px; }
+.is-zen .plan-rename-form label { gap: 4px; font-size: 11px; }
+.is-zen .plan-rename-form input { padding: 5px 7px; }

@@ -5,14 +5,17 @@ import {
   Check,
   ListChecks,
   Percent,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import type { PlanItem } from "../shared/commands";
 import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { useLocale } from "../shared/useLocale";
+import { usePlanItemLayout } from "../shared/usePlanItemLayout";
 import { EmptyState } from "./EmptyState";
 
 export interface PlanItemActions {
+  onRename: (item: PlanItem) => void;
   onOpenDetails: (item: PlanItem) => void;
   onToggleDone: (id: string) => void;
   onCycleProgress: (id: string) => void;
@@ -52,6 +55,9 @@ function PlanItemActionsRow({
   return (
     <div className="plan-item-actions">
       <LongRunningButton item={item} actions={actions} />
+      <button className="icon-button" type="button" onClick={() => actions.onRename(item)} title={t("day.rename")} aria-label={t("day.rename")}>
+        <Pencil size={13} />
+      </button>
       {item.status !== "partial" && (
         <button className="icon-button" type="button" onClick={() => actions.onCycleProgress(item.id)} title={t("day.partial")} aria-label={t("day.partial")}>
           <Percent size={13} />
@@ -78,15 +84,17 @@ function PlanItemActionsRow({
   );
 }
 
-function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
+export function PlanItemRow({ item, actions }: { item: PlanItem; actions: PlanItemActions }) {
   const { t } = useLocale();
   const deleteHold = useHoldToConfirm(() => actions.onDelete(item.id));
+  const { rowRef, measureRef, stacked } = usePlanItemLayout(item.title, item.status);
   return (
-    <li className={`plan-item status-${item.status} ${item.isLongRunning ? "is-long-running" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
+    <li ref={rowRef} className={`plan-item status-${item.status} ${stacked ? "is-actions-stacked" : ""} ${item.isLongRunning ? "is-long-running" : ""} ${deleteHold.holding ? "is-delete-holding" : ""}`}>
       <button className="plan-checkbox" type="button" onClick={() => actions.onToggleDone(item.id)} aria-label={item.status === "done" ? t("day.markUndone") : t("day.markDone")}>
         {item.status === "done" && <Check size={12} />}
       </button>
       <button className="plan-title" type="button" onClick={() => actions.onOpenDetails(item)} aria-label={item.title}>
+        <span className="plan-title-measure" ref={measureRef} data-title={item.title} aria-hidden="true" />
         {item.title}
       </button>
       {item.status === "partial" && (

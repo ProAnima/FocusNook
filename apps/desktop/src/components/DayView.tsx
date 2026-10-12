@@ -19,6 +19,7 @@ import {
 import { buildCalendarMarks } from "../shared/calendarMarks";
 import { CalendarPopover } from "./CalendarPopover";
 import { PlanItemDetailsDialog } from "./PlanItemDetailsDialog";
+import { PlanItemRenameDialog } from "./PlanItemRenameDialog";
 import { PlanItemList, type PlanItemActions } from "./PlanItemList";
 
 function useCalendarItems(monthKey: string) {
@@ -83,15 +84,18 @@ function DayItemDetails({
   plan,
   selectedDate,
   onClose,
+  onRename,
 }: {
   detailsItem: PlanItem;
   plan: ReturnType<typeof usePlanItems>;
   selectedDate: string;
   onClose: () => void;
+  onRename: (item: PlanItem) => void;
 }) {
   return (
     <PlanItemDetailsDialog
       item={plan.items.find((item) => item.id === detailsItem.id) ?? detailsItem}
+      onRename={() => { onRename(plan.items.find((item) => item.id === detailsItem.id) ?? detailsItem); onClose(); }}
       onToggleLongRunning={() => {
         void plan.toggleLongRunning(detailsItem.id).then((updated) => {
           if (updated && !updated.isLongRunning && updated.planDate !== selectedDate) {
@@ -115,6 +119,7 @@ export function DayView() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => monthKeyFromDateKey(todayDateKey()));
   const [detailsItem, setDetailsItem] = useState<PlanItem | null>(null);
+  const [renaming, setRenaming] = useState<PlanItem | null>(null);
   const plan = usePlanItems(selectedDate, selectedDate === todayDateKey());
   const { reminders } = useReminders();
   const calendarItems = useCalendarItems(calendarMonth);
@@ -129,6 +134,7 @@ export function DayView() {
   }
 
   const actions: PlanItemActions = {
+    onRename: setRenaming,
     onOpenDetails: setDetailsItem,
     onToggleDone: plan.toggleDone,
     onCycleProgress: plan.cycleProgress,
@@ -173,12 +179,14 @@ export function DayView() {
       {detailsItem && (
         <DayItemDetails
           detailsItem={detailsItem}
+          onRename={setRenaming}
           plan={plan}
           selectedDate={selectedDate}
           onClose={() => setDetailsItem(null)}
         />
       )}
 
+      {renaming && <PlanItemRenameDialog key={renaming.id} item={renaming} onSave={plan.rename} onClose={() => setRenaming(null)} />}
       <form className="quick-add" onSubmit={handleSubmit}>
         <Plus size={14} />
         <input

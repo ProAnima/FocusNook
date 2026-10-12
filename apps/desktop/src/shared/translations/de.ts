@@ -36,6 +36,12 @@ const deAccount = {
 } satisfies Partial<Dictionary>;
 
 export const de = makeDictionary({
+  "zen.enter": "Zen-Modus aktivieren",
+  "zen.exit": "Zen-Modus verlassen",
+  "zen.next": "Weiter",
+  "zen.finished": "Für heute ist alles erledigt",
+  "day.rename": "Umbenennen",
+  "day.renameError": "Titel konnte nicht gespeichert werden",
   ...deAccount,
   "nav.day": "Tag",
   "nav.notes": "Notizen",

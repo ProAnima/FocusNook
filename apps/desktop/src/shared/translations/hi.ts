@@ -38,6 +38,12 @@ const hiAccount = {
 } satisfies Partial<Dictionary>;
 
 export const hi = makeDictionary({
+  "zen.enter": "ज़ेन मोड चालू करें",
+  "zen.exit": "ज़ेन मोड से बाहर निकलें",
+  "zen.next": "अगला",
+  "zen.finished": "आज के लिए बस इतना ही",
+  "day.rename": "नाम बदलें",
+  "day.renameError": "शीर्षक सहेजा नहीं जा सका",
   ...hiAccount,
   "nav.day": "दिन",
   "nav.notes": "नोट्स",

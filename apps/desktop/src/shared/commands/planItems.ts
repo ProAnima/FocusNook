@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PlanItem } from "./types";
 
 export const planItemsCommands = {
+  async rename(id: string, title: string): Promise<PlanItem> {
+    return invoke<PlanItem>("rename_plan_item", { id, title });
+  },
   async list(planDate: string): Promise<PlanItem[]> {
     return invoke<PlanItem[]>("list_plan_items", { planDate });
   },

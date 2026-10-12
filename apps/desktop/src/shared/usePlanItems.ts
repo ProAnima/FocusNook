@@ -93,6 +93,7 @@ export function usePlanItems(planDate: string, autoRollOver = false) {
     loaded,
     addItem,
     deleteItem,
+    rename: (id: string, title: string) => update(() => commands.planItems.rename(id, title)),
     toggleDone: (id: string) => void update(() => commands.planItems.toggleDone(id)),
     cycleProgress: (id: string) => void update(() => commands.planItems.cycleProgress(id)),
     toggleDeferred: (id: string) => void update(() => commands.planItems.toggleDeferred(id)),

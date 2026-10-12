@@ -38,6 +38,12 @@ const zhAccount = {
 } satisfies Partial<Dictionary>;
 
 export const zh = makeDictionary({
+  "zen.enter": "进入禅模式",
+  "zen.exit": "退出禅模式",
+  "zen.next": "下一个",
+  "zen.finished": "今天就到这里",
+  "day.rename": "重命名",
+  "day.renameError": "无法保存标题",
   ...zhAccount,
   "nav.day": "日程",
   "nav.notes": "笔记",

@@ -4,6 +4,27 @@ use tauri_plugin_opener::OpenerExt;
 const PRIVACY_POLICY_URL: &str = "https://focus.proanima.net/privacy";
 
 #[tauri::command]
+pub(crate) fn get_zen_mode() -> bool {
+    crate::zen_window::is_active()
+}
+
+#[tauri::command]
+pub(crate) fn resize_zen_window(window: tauri::WebviewWindow, height: u32) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Zen Mode is available in the main window only".into());
+    }
+    crate::zen_window::resize_to_content(&window, height)
+}
+
+#[tauri::command]
+pub(crate) fn set_zen_mode(window: tauri::WebviewWindow, enabled: bool) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Zen Mode is available in the main window only".into());
+    }
+    crate::zen_window::set_mode(&window, enabled)
+}
+
+#[tauri::command]
 pub(crate) fn open_privacy_policy(app: tauri::AppHandle) -> Result<(), String> {
     app.opener()
         .open_url(PRIVACY_POLICY_URL, None::<&str>)

@@ -38,6 +38,12 @@ const koAccount = {
 } satisfies Partial<Dictionary>;
 
 export const ko = makeDictionary({
+  "zen.enter": "Zen 모드 시작",
+  "zen.exit": "Zen 모드 종료",
+  "zen.next": "다음",
+  "zen.finished": "오늘은 여기까지",
+  "day.rename": "이름 변경",
+  "day.renameError": "제목을 저장하지 못했습니다",
   ...koAccount,
   "nav.day": "오늘",
   "nav.notes": "메모",

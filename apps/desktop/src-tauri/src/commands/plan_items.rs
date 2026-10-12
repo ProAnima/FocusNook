@@ -2,6 +2,26 @@ use super::trigger_server_sync;
 use crate::{db, plan_items, profiles, sync_log};
 
 #[tauri::command]
+pub(crate) fn rename_plan_item(
+    app: tauri::AppHandle,
+    db: tauri::State<db::Db>,
+    hlc_state: tauri::State<sync_log::HlcClockState>,
+    profiles_state: tauri::State<profiles::ProfilesState>,
+    id: String,
+    title: String,
+) -> Result<plan_items::PlanItemDto, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut clock = hlc_state.0.lock().map_err(|e| e.to_string())?;
+    let profile_id = profiles::active_profile_id(&profiles_state)?;
+    let item = plan_items::rename(&mut conn, &mut clock, &profile_id, &id, &title)
+        .map_err(|e| e.to_string())?;
+    drop(clock);
+    drop(conn);
+    trigger_server_sync(&app);
+    Ok(item)
+}
+
+#[tauri::command]
 pub(crate) fn list_plan_items(
     db: tauri::State<db::Db>,
     plan_date: String,

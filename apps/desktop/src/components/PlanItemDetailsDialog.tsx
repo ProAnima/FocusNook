@@ -1,4 +1,4 @@
-import { CalendarClock, CalendarRange, Percent, Trash2 } from "lucide-react";
+import { CalendarClock, CalendarRange, Pencil, Percent, Trash2 } from "lucide-react";
 import type { PlanItem } from "../shared/commands";
 import { useHoldToConfirm } from "../shared/useHoldToConfirm";
 import { useLocale } from "../shared/useLocale";
@@ -36,6 +36,7 @@ function PlanItemDetailsActions({
 }
 
 export function PlanItemDetailsDialog({
+  onRename,
   item,
   onToggleLongRunning,
   onCycleProgress,
@@ -44,6 +45,7 @@ export function PlanItemDetailsDialog({
   onClose,
 }: {
   item: PlanItem;
+  onRename: () => void;
   onToggleLongRunning: () => void;
   onCycleProgress: () => void;
   onToggleDeferred: () => void;
@@ -54,6 +56,7 @@ export function PlanItemDetailsDialog({
   return (
     <ItemDetailsDialog ariaLabel={item.title} onClose={onClose}>
       <p>{item.title}</p>
+      <button className="plan-long-running-toggle" type="button" onClick={onRename}><Pencil size={17} />{t("day.rename")}</button>
       <button
         className={`plan-long-running-toggle ${item.isLongRunning ? "is-active" : ""}`}
         type="button"

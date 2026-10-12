@@ -38,6 +38,12 @@ const jaAccount = {
 } satisfies Partial<Dictionary>;
 
 export const ja = makeDictionary({
+  "zen.enter": "Zenモードを開始",
+  "zen.exit": "Zenモードを終了",
+  "zen.next": "次へ",
+  "zen.finished": "今日はここまで",
+  "day.rename": "名前を変更",
+  "day.renameError": "タイトルを保存できませんでした",
   ...jaAccount,
   "nav.day": "今日",
   "nav.notes": "メモ",

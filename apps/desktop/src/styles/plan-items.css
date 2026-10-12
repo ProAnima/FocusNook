@@ -214,6 +214,8 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--divider) transparent;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -313,6 +315,7 @@
 }
 
 .plan-title {
+  position: relative;
   flex: 1;
   min-width: 0;
   padding: 0;
@@ -322,9 +325,9 @@
   font-family: inherit;
   color: var(--text-primary);
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
   cursor: pointer;
 }
 
@@ -349,6 +352,8 @@
   width: 100%;
   max-height: 100%;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--divider) transparent;
   padding: 42px 20px 22px;
   border: 1px solid var(--surface-border);
   border-radius: 14px;
@@ -476,6 +481,7 @@
   align-items: center;
   gap: 2px;
   flex: none;
+  margin-left: auto;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -484,6 +490,39 @@
 .plan-item:focus-within .plan-item-actions {
   opacity: 1;
 }
+
+.desktop-stage .plan-item-actions .icon-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+.desktop-stage .plan-item-actions .icon-button svg {
+  flex-shrink: 0;
+}
+
+.plan-title-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  width: max-content;
+  top: 0;
+  left: 0;
+}
+.plan-title-measure::before { content: attr(data-title); }
+.desktop-stage .plan-item.is-actions-stacked {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  row-gap: 4px;
+}
+.desktop-stage .is-actions-stacked .plan-item-actions {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+.desktop-stage .is-actions-stacked .plan-checkbox { grid-row: 2; grid-column: 1; }
+.desktop-stage .is-actions-stacked .plan-title { grid-row: 2; grid-column: 2; }
+.desktop-stage .is-actions-stacked .plan-progress { grid-row: 2; grid-column: 3; }
 
 .quick-add {
   display: flex;

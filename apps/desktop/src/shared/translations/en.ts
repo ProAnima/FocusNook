@@ -1,6 +1,12 @@
 import type { Dictionary } from "./types";
 
 export const en: Dictionary = {
+  "zen.enter": "Enter Zen Mode",
+  "zen.exit": "Exit Zen Mode",
+  "zen.next": "Next",
+  "zen.finished": "All done for today",
+  "day.rename": "Rename",
+  "day.renameError": "Could not save the title",
   "nav.day": "Day",
   "nav.notes": "Notes",
   "nav.reminders": "Reminders",

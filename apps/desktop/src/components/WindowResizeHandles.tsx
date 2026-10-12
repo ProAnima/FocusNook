@@ -18,7 +18,7 @@ function startResize(direction: ResizeDirection, event: PointerEvent) {
   void commands.overlay.startResize(direction);
 }
 
-function keyboardResize(event: KeyboardEvent<HTMLButtonElement>) {
+function keyboardResize(event: KeyboardEvent<HTMLButtonElement>, zenMode: boolean) {
   const step = event.shiftKey ? 48 : 16;
   const delta = {
     ArrowLeft: [-step, 0],
@@ -28,10 +28,11 @@ function keyboardResize(event: KeyboardEvent<HTMLButtonElement>) {
   }[event.key];
   if (!delta) return;
   event.preventDefault();
-  void commands.overlay.resizeBy(delta[0], delta[1]);
+  if (zenMode) void commands.overlay.resizeBy(delta[0], delta[1], true);
+  else void commands.overlay.resizeBy(delta[0], delta[1]);
 }
 
-export function WindowResizeHandles() {
+export function WindowResizeHandles({ zenMode = false }: { zenMode?: boolean }) {
   const { t } = useLocale();
   return (
     <>
@@ -50,7 +51,7 @@ export function WindowResizeHandles() {
         type="button"
         aria-label={t("header.resize")}
         title={t("header.resize")}
-        onKeyDown={keyboardResize}
+        onKeyDown={(event) => keyboardResize(event, zenMode)}
         onPointerDown={(event) => startResize("SouthEast", event)}
       >
         <span aria-hidden="true" />

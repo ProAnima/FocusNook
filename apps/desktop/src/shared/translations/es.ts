@@ -27,6 +27,12 @@ const esAccount = {
 } satisfies Partial<Dictionary>;
 
 export const es = makeDictionary({
+  "zen.enter": "Activar modo zen",
+  "zen.exit": "Salir del modo zen",
+  "zen.next": "Siguiente",
+  "zen.finished": "Eso es todo por hoy",
+  "day.rename": "Renombrar",
+  "day.renameError": "No se pudo guardar el título",
   ...esAccount,
   "nav.day": "Día",
   "nav.notes": "Notas",
