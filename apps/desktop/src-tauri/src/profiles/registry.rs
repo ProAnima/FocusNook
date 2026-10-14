@@ -55,7 +55,6 @@ fn load_or_migrate(data_dir: &Path) -> Result<ProfilesFile, String> {
             keyring_user,
             email: None,
             password_hash: None,
-            sync_enabled: false,
         }],
         active_profile_id: Some(id),
         session_locked: false,

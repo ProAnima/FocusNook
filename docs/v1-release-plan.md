@@ -17,7 +17,7 @@ letting it drift the way the old Iteration 0-3 roadmap did.
    - approve the `/privacy` and `/terms` drafts with qualified legal review;
    - create the permanent upload key, make two encrypted backups, and record
      its certificate SHA-256. No release key is stored in this repository.
-2. **VDS operational follow-ups** (hardened rollout completed 2026-07-26):
+2. **VDS operational follow-ups** (stability rollout completed 2026-08-21):
    - rotate `FOCUSNOOK_ADMIN_TOKEN` after bootstrap;
    - add an external uptime monitor for `/healthz` and `/readyz`;
    - retain the verified local backup and its manifest according to the
@@ -93,7 +93,7 @@ letting it drift the way the old Iteration 0-3 roadmap did.
 - `planner-core` / `planner-sync` / `planner-storage` crate extraction from
   `apps/desktop/src-tauri/src` into standalone crates.
 
-## Implemented, pending physical release acceptance (2026-07-26)
+## Implemented, pending physical release acceptance (updated 2026-10-12)
 
 - Zen Mode and task rename (2026-10-12): desktop focus icon beside pin opens a
   one-task view of unfinished items in today's list, including long-running
@@ -121,6 +121,17 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   desktop fmt/Clippy + 135 tests, and server fmt/Clippy + 23 tests. Desktop test
   linking reports OpenSSL LNK4099 debug-symbol warnings; Clippy is clean.
 
+- Account sync now has one source of truth: the stored per-account server
+  session. The redundant `profiles.json` enablement flag was removed because
+  migrated accounts could look connected in Settings while background sync
+  silently skipped them. Switching accounts invalidates any in-flight response
+  before the vault changes and immediately schedules the newly active account;
+  manual and background exchanges now share one serialized run gate.
+  Settings exposes one account-bound connection flow instead of a second manual
+  VDS login that could attach an unrelated server identity. Automated desktop
+  tests cover migrated credentials, account-switch invalidation, enablement,
+  manual sync, and account deletion; the physical two-account/two-device VDS
+  pass remains part of blocker 3 above.
 - Tasks can be marked as long-running independently of their completion
   status. Marked tasks are global: they appear in a compact group above every
   daily list, do not inflate that day's completion counter, and are skipped by
@@ -139,6 +150,19 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   duplicate idempotency, cross-device wakeups, encrypted audio upload/download,
   and exact audio-byte recovery. The temporary account and its data were
   deleted afterwards.
+- The 2026-08-21 VDS stability rollout added SIGTERM-aware graceful shutdown,
+  bounded request/config limits, Docker health-check start periods and log
+  rotation, and nginx throttling scoped to login/registration only. The blob
+  request limit now includes JSON/Base64 expansion instead of rejecting valid
+  blobs above roughly 12 MiB. A post-deploy Windows-to-Android live probe
+  transferred an operation, received the long-poll wakeup, and round-tripped a
+  13 MiB opaque blob with an exact SHA-256 match. Cleanup restored the production
+  aggregates to 7 users, 20 active devices, 224 operations, and 8 blobs; the
+  server remained healthy with 0 restarts and 0 OOM events.
+- Production backup evidence (2026-08-21):
+  `focusnook-20260821T080037Z.dump`, 1029733 bytes, SHA-256
+  `b657e27fe709a5def7108bcb4c56315db9c5d78ac79507033e15c4c69e39e867`.
+  The local hash matches its manifest and the temporary VDS dump count is zero.
 - The hardened server image was deployed on 2026-07-26 after the verified
   backup and restore drill. Independent live probes now receive `400 Bad
   Request` for both a deliberately wrong blob SHA-256 and an unsafe `../` blob

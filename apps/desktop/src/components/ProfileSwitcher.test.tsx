@@ -9,7 +9,6 @@ const ACCOUNT = {
   avatarColor: "#f2b463",
   email: "me@example.test",
   accountConfigured: true,
-  syncEnabled: false,
 };
 
 describe("ProfileSwitcher", () => {

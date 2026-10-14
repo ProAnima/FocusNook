@@ -78,7 +78,7 @@ tauri-plugin-secure-storage = { path = "../../../plugins/tauri-plugin-secure-sto
 # подтверждает) — не новый вес в сборке, но Rust требует явного объявления
 # в Cargo.toml, чтобы называть crate напрямую в коде (spawn_blocking для
 # блокирующего tiny_http::Server::recv, см. oauth.rs).
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
 log = "0.4"
 tauri-plugin-log = "2"
 

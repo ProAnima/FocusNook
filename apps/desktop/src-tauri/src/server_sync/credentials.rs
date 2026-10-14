@@ -188,6 +188,11 @@ fn load_credentials_raw(
     .map_err(|e| e.to_string())
 }
 
+/// Stored credentials are the single source of truth for whether an account syncs.
+pub(super) fn profile_has_credentials(conn: Option<&Connection>, profile_id: &str) -> bool {
+    matches!(load_credentials(conn, profile_id), Ok(Some(_)))
+}
+
 pub(super) fn delete_credentials(
     conn: Option<&Connection>,
     profile_id: &str,
@@ -279,6 +284,7 @@ mod tests {
     #[test]
     fn stores_server_credentials_per_profile() -> Result<(), String> {
         let profile_id = unique_profile_id();
+        assert!(!profile_has_credentials(None, &profile_id));
 
         store_credentials(
             None,
@@ -289,6 +295,7 @@ mod tests {
             None,
             None,
         )?;
+        assert!(profile_has_credentials(None, &profile_id));
 
         let status = status_for_profile(None, &profile_id, true, None)?;
         assert_eq!(
@@ -306,6 +313,7 @@ mod tests {
         );
 
         delete_credentials(None, &profile_id)?;
+        assert!(!profile_has_credentials(None, &profile_id));
         Ok(())
     }
 

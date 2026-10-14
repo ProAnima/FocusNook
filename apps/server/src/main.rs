@@ -54,7 +54,32 @@ fn healthcheck() -> AppResult<()> {
 }
 
 async fn shutdown_signal() {
-    if let Err(err) = tokio::signal::ctrl_c().await {
-        tracing::warn!(%err, "failed to install Ctrl+C shutdown handler");
+    let ctrl_c = tokio::signal::ctrl_c();
+    #[cfg(unix)]
+    {
+        let terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+        match terminate {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    result = ctrl_c => {
+                        if let Err(err) = result {
+                            tracing::warn!(%err, "Ctrl+C shutdown handler failed");
+                        }
+                    }
+                    _ = terminate.recv() => {}
+                }
+            }
+            Err(err) => {
+                tracing::warn!(%err, "SIGTERM shutdown handler failed");
+                if let Err(err) = ctrl_c.await {
+                    tracing::warn!(%err, "Ctrl+C shutdown handler failed");
+                }
+            }
+        }
     }
+    #[cfg(not(unix))]
+    if let Err(err) = ctrl_c.await {
+        tracing::warn!(%err, "Ctrl+C shutdown handler failed");
+    }
+    tracing::info!("graceful shutdown requested");
 }

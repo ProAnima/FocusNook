@@ -72,7 +72,7 @@ export const ja = makeDictionary({
   "settings.themeSystem": "システム",
   "settings.themeLight": "ライト",
   "settings.themeDark": "ダーク",
-  "settings.themeSystemDesc": "Windows に合わせる",
+  "settings.themeSystemDesc": "システム設定に合わせる",
   "settings.themeKindAuto": "自動",
   "settings.themeKindStatic": "静的",
   "settings.themeKindLive": "ライブ",

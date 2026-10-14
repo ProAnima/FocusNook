@@ -137,35 +137,6 @@ pub fn unlock_account(
     save(&state.data_dir, &file)
 }
 
-pub fn set_sync_enabled(state: &ProfilesState, enabled: bool) -> Result<ProfilesResponse, String> {
-    let mut file = state.file.lock().map_err(|e| e.to_string())?;
-    let active_id = file
-        .active_profile_id
-        .clone()
-        .ok_or_else(|| "no active account".to_string())?;
-    let record = file
-        .profiles
-        .iter_mut()
-        .find(|record| record.id == active_id)
-        .ok_or_else(|| "active account not found".to_string())?;
-    record.sync_enabled = enabled;
-    save(&state.data_dir, &file)?;
-    to_response(&file)
-}
-
-pub fn active_sync_enabled(state: &ProfilesState) -> Result<bool, String> {
-    let file = state.file.lock().map_err(|e| e.to_string())?;
-    let active_id = file
-        .active_profile_id
-        .as_deref()
-        .ok_or_else(|| "no active account".to_string())?;
-    file.profiles
-        .iter()
-        .find(|record| record.id == active_id)
-        .map(|record| record.sync_enabled)
-        .ok_or_else(|| "active account not found".to_string())
-}
-
 pub fn active_account_identity(state: &ProfilesState) -> Result<(String, String), String> {
     let file = state.file.lock().map_err(|e| e.to_string())?;
     let active_id = file

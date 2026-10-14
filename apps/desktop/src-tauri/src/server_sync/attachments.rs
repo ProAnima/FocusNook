@@ -1,8 +1,9 @@
+use super::active_account::{self, ensure_active_account, ActiveSyncContext};
 use super::credentials::{load_credentials, server_profile_id, ServerSyncCredentials};
 use super::protocol::UploadBlobResponse;
 use super::transport::http_client;
 use super::BLOB_TRANSFER_TIMEOUT;
-use crate::sync_blobs;
+use crate::{profiles, sync_blobs};
 
 async fn upload_prepared_blob(
     credentials: &ServerSyncCredentials,
@@ -56,11 +57,14 @@ async fn download_blob(
 
 pub async fn ensure_audio_blob_downloaded(
     db: &crate::db::Db,
+    profiles_state: &profiles::ProfilesState,
     profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
     blob_id: &str,
 ) -> Result<(), String> {
+    let account_generation = active_account::current_generation();
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     if sync_blobs::audio_file_path(audio_dir, blob_id)?.exists() {
         return Ok(());
     }
@@ -81,7 +85,9 @@ pub async fn ensure_audio_blob_downloaded(
             "audio blob {blob_id} is missing on the sync server"
         ));
     };
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     sync_blobs::materialize_download(
         &conn,
         profile_id,
@@ -95,12 +101,14 @@ pub async fn ensure_audio_blob_downloaded(
 
 pub(super) async fn upload_pending_blobs(
     db: &crate::db::Db,
+    account: &ActiveSyncContext<'_>,
     credentials: &ServerSyncCredentials,
-    local_profile_id: &str,
-    remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
 ) -> Result<usize, String> {
+    let local_profile_id = account.local_profile_id;
+    let remote_profile_id = account.remote_profile_id;
+    account.ensure_active()?;
     let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         sync_blobs::pending_uploads_for_remote(&conn, local_profile_id, remote_profile_id)?
@@ -150,7 +158,9 @@ pub(super) async fn upload_pending_blobs(
                 continue;
             }
         };
+        account.ensure_active()?;
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        account.ensure_active()?;
         sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
         sync_blobs::mark_uploaded_to(&conn, local_profile_id, &blob_id, remote_profile_id)?;
         uploaded += 1;
@@ -163,12 +173,14 @@ pub(super) async fn upload_pending_blobs(
 
 pub(super) async fn download_pending_blobs(
     db: &crate::db::Db,
+    account: &ActiveSyncContext<'_>,
     credentials: &ServerSyncCredentials,
-    local_profile_id: &str,
-    remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
 ) -> Result<usize, String> {
+    let local_profile_id = account.local_profile_id;
+    let remote_profile_id = account.remote_profile_id;
+    account.ensure_active()?;
     let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         sync_blobs::pending_downloads(&conn, local_profile_id)?
@@ -197,7 +209,9 @@ pub(super) async fn download_pending_blobs(
                 continue;
             }
         };
+        account.ensure_active()?;
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        account.ensure_active()?;
         if let Err(err) = sync_blobs::materialize_download(
             &conn,
             local_profile_id,
