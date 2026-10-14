@@ -66,7 +66,7 @@ export const hi = makeDictionary({
   "settings.themeSystem": "सिस्टम",
   "settings.themeLight": "लाइट",
   "settings.themeDark": "डार्क",
-  "settings.themeSystemDesc": "Windows का अनुसरण करता है",
+  "settings.themeSystemDesc": "सिस्टम का अनुसरण करता है",
   "settings.themeKindAuto": "ऑटो",
   "settings.themeKindStatic": "स्थिर",
   "settings.themeKindLive": "लाइव",

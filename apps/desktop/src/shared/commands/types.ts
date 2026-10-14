@@ -72,7 +72,6 @@ export interface Profile {
   avatarColor: string;
   email: string | null;
   accountConfigured: boolean;
-  syncEnabled: boolean;
 }
 
 export interface ProfilesResponse {

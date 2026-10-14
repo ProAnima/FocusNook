@@ -1,4 +1,4 @@
-use crate::{android_vault_key, db, profiles, sync_log, AudioKeyState};
+use crate::{android_vault_key, db, profiles, server_sync, sync_log, AudioKeyState};
 
 // Раздел 15 ТЗ: у каждого профиля свой vault-файл и свой ключ в keychain.
 // Переключение профиля = закрыть текущее соединение и открыть другое —
@@ -107,6 +107,8 @@ pub(crate) fn create_profile(
 ) -> Result<profiles::ProfilesResponse, String> {
     let (pending, vault_path) = profiles::prepare_create(&state, &display_name, &email, &password)?;
     let data_dir = profiles::data_dir(&state).to_path_buf();
+    // In-flight sync for the previous account must not write into the new vault.
+    let sync_change = server_sync::begin_active_account_change();
     install_vault(
         &app,
         &db,
@@ -117,6 +119,8 @@ pub(crate) fn create_profile(
         pending.keyring_user(),
     )?;
     profiles::commit_create(&state, pending)?;
+    drop(sync_change);
+    server_sync::spawn_best_effort(app);
     log::info!("создан новый профиль, vault установлен");
     profiles::list(&state)
 }
@@ -149,7 +153,10 @@ pub(crate) fn switch_active_profile(
     password: String,
 ) -> Result<profiles::ProfilesResponse, String> {
     profiles::verify_account_password(&state, &id, &password)?;
+    let sync_change = server_sync::begin_active_account_change();
     switch_vault(&app, &db, &hlc_state, &audio_key_state, &state, &id)?;
     profiles::unlock_account(&state, &id, &password)?;
+    drop(sync_change);
+    server_sync::spawn_best_effort(app);
     profiles::list(&state)
 }

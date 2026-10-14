@@ -70,7 +70,7 @@ export const es = makeDictionary({
   "settings.themeSystem": "Sistema",
   "settings.themeLight": "Claro",
   "settings.themeDark": "Oscuro",
-  "settings.themeSystemDesc": "Sigue a Windows",
+  "settings.themeSystemDesc": "Sigue el sistema",
   "settings.themeLightDesc": "Modo diurno limpio",
   "settings.themeDarkDesc": "Base nocturna tranquila",
   "settings.themeKindAuto": "Auto",

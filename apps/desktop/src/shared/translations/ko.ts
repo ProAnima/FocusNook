@@ -66,7 +66,7 @@ export const ko = makeDictionary({
   "settings.themeSystem": "시스템",
   "settings.themeLight": "라이트",
   "settings.themeDark": "다크",
-  "settings.themeSystemDesc": "Windows 설정 따름",
+  "settings.themeSystemDesc": "시스템 설정 따름",
   "settings.themeKindAuto": "자동",
   "settings.themeKindStatic": "정적",
   "settings.themeKindLive": "라이브",
