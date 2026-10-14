@@ -1,18 +1,14 @@
+import { useCallback, useState } from "react";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import { useLocale } from "../../shared/useLocale";
 import { AccountSyncToggle } from "./AccountSyncToggle";
-import { ServerAccountCard } from "./ServerAccountCard";
-import { ServerAuthForm } from "./ServerAuthForm";
+import { ServerAccountDeletion } from "./ServerAccountDeletion";
 import { SyncReadinessCard } from "./SyncReadinessCard";
-import { useServerAccount } from "./useServerAccount";
-
-function ServerSyncRow() {
-  const server = useServerAccount();
-  return server.account.connected ? <ServerAccountCard server={server} /> : <ServerAuthForm server={server} />;
-}
 
 export function SyncSection() {
   const { t } = useLocale();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshConnection = useCallback(() => setRefreshKey((value) => value + 1), []);
   return (
     <div className="settings-group">
       <span className="settings-group-label">{t("settings.sync")}</span>
@@ -24,14 +20,11 @@ export function SyncSection() {
         </div>
       </div>
       <SyncReadinessCard />
-      <AccountSyncToggle />
+      <AccountSyncToggle refreshKey={refreshKey} onConnectionChange={refreshConnection} />
+      <ServerAccountDeletion refreshKey={refreshKey} onConnectionChange={refreshConnection} />
       {/* Google Drive/Yandex Disk адаптеры отключены от UI на v1 (VDS-only,
           см. docs/v1-release-plan.md) — Rust/plugin-код остаётся в дереве
           за Cargo-фичей `cloud-providers`, провайдеры отсюда не подключаются. */}
-      <details className="server-sync-advanced">
-        <summary>{t("account.syncAdvanced")}</summary>
-        <ServerSyncRow />
-      </details>
       <p className="settings-secure-note">
         <KeyRound size={12} />
         <span>{t("settings.syncSecureNote")}</span>

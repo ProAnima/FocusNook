@@ -20,11 +20,9 @@ const {
   syncStart,
   syncDisconnect,
   serverSyncStatus,
-  serverSyncLogin,
-  serverSyncRegister,
-  serverSyncDisconnect,
+  serverSyncSetEnabled,
+  serverSyncNow,
   serverSyncDeleteAccount,
-  openPrivacy,
 } = vi.hoisted(() => ({
   getAutostart: vi.fn().mockResolvedValue(false),
   setAutostart: vi.fn().mockResolvedValue(undefined),
@@ -56,7 +54,7 @@ const {
     mediaReady: false,
     message: null,
   }),
-  serverSyncLogin: vi.fn().mockResolvedValue({
+  serverSyncSetEnabled: vi.fn().mockResolvedValue({
     available: true,
     accountEmail: "user@example.com",
     accountUserId: "user-1",
@@ -66,7 +64,7 @@ const {
     mediaReady: true,
     message: null,
   }),
-  serverSyncRegister: vi.fn().mockResolvedValue({
+  serverSyncNow: vi.fn().mockResolvedValue({
     available: true,
     accountEmail: "user@example.com",
     accountUserId: "user-1",
@@ -76,9 +74,7 @@ const {
     mediaReady: true,
     message: null,
   }),
-  serverSyncDisconnect: vi.fn().mockResolvedValue(undefined),
   serverSyncDeleteAccount: vi.fn().mockResolvedValue(undefined),
-  openPrivacy: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../shared/commands", () => ({
@@ -96,13 +92,12 @@ vi.mock("../shared/commands", () => ({
     diagnostics: { export: exportDiagnostics },
     sync: { readiness: syncReadiness, status: syncStatus, start: syncStart, disconnect: syncDisconnect },
     serverSync: {
+      onCompleted: vi.fn().mockResolvedValue(() => {}),
       status: serverSyncStatus,
-      login: serverSyncLogin,
-      register: serverSyncRegister,
-      disconnect: serverSyncDisconnect,
+      setEnabled: serverSyncSetEnabled,
+      syncNow: serverSyncNow,
       deleteAccount: serverSyncDeleteAccount,
     },
-    legal: { openPrivacy },
   },
 }));
 
@@ -224,43 +219,48 @@ describe("SettingsPanel", () => {
     expect(await screen.findByText("2026-07-06 12:30:00")).toBeInTheDocument();
   });
 
-  it("signs into the configured server account", async () => {
+  it("enables sync for the active local account", async () => {
+    const disconnected = {
+      available: true, accountEmail: null, accountUserId: null, connected: false,
+      displayName: null, endpoint: null, mediaReady: false, message: null,
+    };
+    const connected = {
+      available: true, accountEmail: "user@example.com", accountUserId: "user-1", connected: true,
+      displayName: "User", endpoint: "https://focus.proanima.net", mediaReady: true, message: null,
+    };
+    serverSyncStatus.mockReset()
+      .mockResolvedValueOnce(disconnected)
+      .mockResolvedValueOnce(disconnected)
+      .mockResolvedValue(connected);
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
-    await screen.findByText("Готово к подключению");
-    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
-    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
-    await user.click(screen.getByText("Войти"));
-
-    expect(serverSyncLogin).toHaveBeenCalledWith("user@example.com", "StrongPass123");
-  });
-
-  it("creates a server account from the same profile card", async () => {
-    const user = userEvent.setup();
-    render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
-
-    await user.click(await screen.findByText("Регистрация"));
-    await user.type(screen.getByPlaceholderText("Имя"), "User");
-    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
-    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(await screen.findByRole("switch"));
+    await user.type(screen.getByPlaceholderText("Подтвердите пароль аккаунта"), "StrongPass123");
     await user.click(screen.getByRole("checkbox"));
-    await user.click(screen.getByText("Создать аккаунт"));
+    await user.click(screen.getByText("Включить"));
 
-    expect(serverSyncRegister).toHaveBeenCalledWith("user@example.com", "StrongPass123", "User", true);
+    expect(serverSyncSetEnabled).toHaveBeenCalledWith(true, "StrongPass123", true);
+    expect(await screen.findByText("user@example.com")).toBeInTheDocument();
   });
 
-  it("requires privacy consent before account creation", async () => {
+  it("runs sync manually for a connected account", async () => {
+    serverSyncStatus.mockResolvedValue({
+      available: true,
+      accountEmail: "user@example.com",
+      accountUserId: "user-1",
+      connected: true,
+      displayName: "User",
+      endpoint: "https://focus.proanima.net",
+      mediaReady: true,
+      message: null,
+    });
     const user = userEvent.setup();
     render(<SettingsPanel shortcutInfo={null} onClose={() => {}} isDesktop />);
 
-    await user.click(await screen.findByText("Регистрация"));
-    await user.type(screen.getByPlaceholderText("Почта"), "user@example.com");
-    await user.type(screen.getByPlaceholderText("Пароль"), "StrongPass123");
+    await user.click(await screen.findByText("Синхронизировать"));
 
-    expect(screen.getByText("Создать аккаунт")).toBeDisabled();
-    await user.click(screen.getByText("Открыть политику конфиденциальности"));
-    expect(openPrivacy).toHaveBeenCalledOnce();
+    expect(serverSyncNow).toHaveBeenCalledOnce();
   });
 
   it("deletes a connected server account only after password confirmation", async () => {
