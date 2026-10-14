@@ -9,6 +9,7 @@ import hashlib
 import json
 import secrets
 import shlex
+import socket
 from pathlib import Path
 
 import paramiko
@@ -20,6 +21,35 @@ def parse_access_file(path: Path) -> tuple[str, str, str]:
         if len(fields) == 3 and not line.lstrip().startswith("#"):
             return fields[0], fields[1], fields[2]
     raise ValueError("access file must contain a 'host user password' line")
+
+
+def connect(ssh: paramiko.SSHClient, access_file: Path | None, ssh_host: str | None) -> None:
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    if access_file is not None:
+        host, user, password = parse_access_file(access_file)
+        ssh.connect(host, username=user, password=password, timeout=15)
+        return
+
+    if not ssh_host:
+        raise ValueError("either --access-file or --ssh-host is required")
+    config_path = Path.home() / ".ssh" / "config"
+    lookup: dict[str, object] = {}
+    if config_path.is_file():
+        with config_path.open(encoding="utf-8") as source:
+            lookup = paramiko.SSHConfig().from_file(source).lookup(ssh_host)
+    hostname = str(lookup.get("hostname", ssh_host))
+    username = lookup.get("user")
+    identity_files = lookup.get("identityfile")
+    key_filename = identity_files if isinstance(identity_files, list) else None
+    ssh.connect(
+        hostname,
+        username=str(username) if username else None,
+        key_filename=key_filename,
+        look_for_keys=True,
+        allow_agent=True,
+        timeout=15,
+    )
 
 
 def run(ssh: paramiko.SSHClient, command: str) -> str:
@@ -42,7 +72,12 @@ def sha256(path: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--access-file", required=True, type=Path)
+    access = parser.add_mutually_exclusive_group(required=True)
+    access.add_argument("--access-file", type=Path)
+    access.add_argument(
+        "--ssh-host",
+        help="OpenSSH host alias or hostname; uses ~/.ssh/config, keys, and known_hosts",
+    )
     parser.add_argument(
         "--destination",
         type=Path,
@@ -51,7 +86,6 @@ def main() -> None:
     parser.add_argument("--container", default="focusnook-postgres-1")
     args = parser.parse_args()
 
-    host, user, password = parse_access_file(args.access_file)
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     filename = f"focusnook-{timestamp}.dump"
     destination = args.destination / filename
@@ -61,9 +95,10 @@ def main() -> None:
     quoted_remote = shlex.quote(remote_path)
 
     ssh = paramiko.SSHClient()
-    ssh.load_system_host_keys()
-    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
-    ssh.connect(host, username=user, password=password, timeout=15)
+    try:
+        connect(ssh, args.access_file, args.ssh_host)
+    except (OSError, paramiko.SSHException, socket.error) as err:
+        raise RuntimeError(f"SSH connection failed: {err}") from err
     try:
         labels = run(
             ssh,

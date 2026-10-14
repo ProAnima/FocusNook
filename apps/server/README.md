@@ -46,6 +46,16 @@ python scripts/backup-vds-local.py `
   --destination C:\path\to\FocusNook-backups
 ```
 
+If the operator already has key-based access in `~/.ssh/config`, prefer the
+host alias so no password access file is needed:
+
+```powershell
+python scripts/backup-vds-local.py `
+  --ssh-host focusnook-vds `
+  --destination C:\path\to\FocusNook-backups
+```
+
+Both modes require a known host key and fail closed for an unknown server.
 This helper requires Python and `paramiko`. Record the printed SHA-256. Then run
 the fail-closed deployment wrapper on the VDS as root (or with equivalent Docker
 and nginx permissions):
@@ -172,6 +182,11 @@ otherwise arrive between two long-poll requests:
 "sequence": 0}` on timeout. It is a wakeup signal only - the client still calls
 `/v1/sync/exchange` to fetch the actual operations.
 
+The aggregate JSON request limit defaults to 32 MiB. This is deliberately
+larger than `FOCUSNOOK_MAX_BLOB_BYTES`: blob bytes are Base64-encoded in JSON,
+so a 15 MiB encrypted recording needs roughly 20 MiB on the wire. nginx and
+the Axum body limit must stay aligned when either value changes.
+
 ## Restore
 
 Stop writers before restoring a dump:
@@ -215,5 +230,7 @@ email together to enable public registration. `FOCUSNOOK_LEGAL_TAX_ID` and
 - Store `.env` outside the repository and database dumps only on the operator's
   local backup storage, not on the VDS.
 - Keep TLS termination in Caddy and do not expose the Rust server port publicly.
+- Keep Docker JSON log rotation enabled and leave enough stop grace time for an
+  in-flight exchange to finish during a controlled deploy.
 - For stronger availability than a single VDS, add managed Postgres or streaming replication,
   offsite backups, and an external uptime monitor.
