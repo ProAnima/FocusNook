@@ -13,6 +13,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   server:
     build:
@@ -37,6 +44,7 @@ services:
       FOCUSNOOK_MAX_OPS_PER_EXCHANGE: ${FOCUSNOOK_MAX_OPS_PER_EXCHANGE:-500}
       FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES: ${FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES:-262144}
       FOCUSNOOK_MAX_BLOB_BYTES: ${FOCUSNOOK_MAX_BLOB_BYTES:-15728640}
+      FOCUSNOOK_MAX_REQUEST_BODY_BYTES: ${FOCUSNOOK_MAX_REQUEST_BODY_BYTES:-33554432}
       RUST_LOG: ${RUST_LOG:-focusnook_sync_server=info,tower_http=info}
     ports:
       - "127.0.0.1:${FOCUSNOOK_HOST_PORT:-18080}:8080"
@@ -45,6 +53,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   focusnook-postgres:

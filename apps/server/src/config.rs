@@ -3,6 +3,12 @@ use crate::legal::LegalIdentity;
 use base64::Engine;
 use std::net::SocketAddr;
 
+const MAX_CONFIGURED_BLOB_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CONFIGURED_OPERATION_BYTES: usize = 1024 * 1024;
+const MAX_CONFIGURED_REQUEST_BYTES: usize = 128 * 1024 * 1024;
+const MAX_CONFIGURED_OPS: i64 = 1000;
+const REQUEST_JSON_OVERHEAD_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone)]
 pub struct Config {
     pub admin_token: String,
@@ -13,6 +19,7 @@ pub struct Config {
     pub max_blob_bytes: usize,
     pub max_operation_payload_bytes: usize,
     pub max_ops_per_exchange: i64,
+    pub max_request_body_bytes: usize,
     pub legal_identity: Option<LegalIdentity>,
     pub public_base_url: String,
     pub token_pepper: Vec<u8>,
@@ -20,24 +27,79 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> AppResult<Self> {
+        let max_blob_bytes = bounded_usize(
+            "FOCUSNOOK_MAX_BLOB_BYTES",
+            "15728640",
+            MAX_CONFIGURED_BLOB_BYTES,
+        )?;
+        let max_request_body_bytes = bounded_usize(
+            "FOCUSNOOK_MAX_REQUEST_BODY_BYTES",
+            "33554432",
+            MAX_CONFIGURED_REQUEST_BYTES,
+        )?;
+        validate_blob_request_limit(max_blob_bytes, max_request_body_bytes)?;
         Ok(Self {
             admin_token: required("FOCUSNOOK_ADMIN_TOKEN")?,
             admin_web_password: required("FOCUSNOOK_WEB_SECONDARY_PASSWORD")?,
             bind_addr: optional("FOCUSNOOK_BIND_ADDR", "0.0.0.0:8080").parse()?,
             database_url: required("FOCUSNOOK_DATABASE_URL")?,
             encryption_key: decode_key("FOCUSNOOK_ENCRYPTION_KEY_B64")?,
-            max_blob_bytes: optional("FOCUSNOOK_MAX_BLOB_BYTES", "15728640").parse()?,
-            max_operation_payload_bytes: optional(
+            max_blob_bytes,
+            max_operation_payload_bytes: bounded_usize(
                 "FOCUSNOOK_MAX_OPERATION_PAYLOAD_BYTES",
                 "262144",
-            )
-            .parse()?,
-            max_ops_per_exchange: optional("FOCUSNOOK_MAX_OPS_PER_EXCHANGE", "500").parse()?,
+                MAX_CONFIGURED_OPERATION_BYTES,
+            )?,
+            max_ops_per_exchange: bounded_i64(
+                "FOCUSNOOK_MAX_OPS_PER_EXCHANGE",
+                "500",
+                MAX_CONFIGURED_OPS,
+            )?,
+            max_request_body_bytes,
             legal_identity: optional_legal_identity()?,
             public_base_url: optional("FOCUSNOOK_PUBLIC_BASE_URL", "http://localhost:8080"),
             token_pepper: decode_key("FOCUSNOOK_TOKEN_PEPPER_B64")?,
         })
     }
+}
+
+fn bounded_usize(name: &str, default: &str, maximum: usize) -> AppResult<usize> {
+    let value = optional(name, default).parse::<usize>()?;
+    if value == 0 || value > maximum {
+        return Err(AppError::Config(format!(
+            "{name} must be between 1 and {maximum}"
+        )));
+    }
+    Ok(value)
+}
+
+fn bounded_i64(name: &str, default: &str, maximum: i64) -> AppResult<i64> {
+    let value = optional(name, default).parse::<i64>()?;
+    if value <= 0 || value > maximum {
+        return Err(AppError::Config(format!(
+            "{name} must be between 1 and {maximum}"
+        )));
+    }
+    Ok(value)
+}
+
+fn minimum_blob_request_bytes(max_blob_bytes: usize) -> AppResult<usize> {
+    max_blob_bytes
+        .checked_add(2)
+        .and_then(|value| value.checked_div(3))
+        .and_then(|value| value.checked_mul(4))
+        .and_then(|value| value.checked_add(REQUEST_JSON_OVERHEAD_BYTES))
+        .ok_or_else(|| AppError::Config("blob request limit overflow".to_string()))
+}
+
+fn validate_blob_request_limit(max_blob_bytes: usize, max_request_bytes: usize) -> AppResult<()> {
+    let minimum = minimum_blob_request_bytes(max_blob_bytes)?;
+    if max_request_bytes < minimum {
+        return Err(AppError::Config(format!(
+            "FOCUSNOOK_MAX_REQUEST_BODY_BYTES must be at least {minimum} for the configured blob limit"
+        )));
+    }
+    Ok(())
 }
 
 fn optional_legal_identity() -> AppResult<Option<LegalIdentity>> {
@@ -127,5 +189,15 @@ mod tests {
     fn legal_identity_rejects_missing_operator_contact() {
         let result = legal_identity_from_values([Some("address".into()), None, None, None]);
         assert!(matches!(result, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn request_limit_accounts_for_base64_blob_expansion() -> AppResult<()> {
+        let blob_bytes = 15 * 1024 * 1024;
+        let minimum = minimum_blob_request_bytes(blob_bytes)?;
+        assert_eq!(minimum, 21 * 1024 * 1024);
+        assert!(validate_blob_request_limit(blob_bytes, minimum).is_ok());
+        assert!(validate_blob_request_limit(blob_bytes, minimum - 1).is_err());
+        Ok(())
     }
 }
