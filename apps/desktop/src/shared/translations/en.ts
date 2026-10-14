@@ -121,7 +121,7 @@ export const en: Dictionary = {
   "settings.themeSystem": "System",
   "settings.themeLight": "Light",
   "settings.themeDark": "Dark",
-  "settings.themeSystemDesc": "Follows Windows",
+  "settings.themeSystemDesc": "Follows the system",
   "settings.themeLightDesc": "Clean daytime mode",
   "settings.themeDarkDesc": "Quiet night base",
   "settings.themeKindAuto": "Auto",

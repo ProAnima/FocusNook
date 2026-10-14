@@ -124,7 +124,7 @@ export const ru = {
   "settings.themeSystem": "Системная",
   "settings.themeLight": "Светлая",
   "settings.themeDark": "Тёмная",
-  "settings.themeSystemDesc": "Следует за Windows",
+  "settings.themeSystemDesc": "Следует за системой",
   "settings.themeLightDesc": "Чистый дневной режим",
   "settings.themeDarkDesc": "Спокойная ночная база",
   "settings.themeKindAuto": "Авто",

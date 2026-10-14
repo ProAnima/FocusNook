@@ -66,7 +66,7 @@ export const zh = makeDictionary({
   "settings.themeSystem": "系统",
   "settings.themeLight": "浅色",
   "settings.themeDark": "深色",
-  "settings.themeSystemDesc": "跟随 Windows",
+  "settings.themeSystemDesc": "跟随系统",
   "settings.themeKindAuto": "自动",
   "settings.themeKindStatic": "静态",
   "settings.themeKindLive": "动态",
