@@ -114,7 +114,7 @@ letting it drift the way the old Iteration 0-3 roadmap did.
   At 280 px width, browser checks observed a short card at 85 px height and a
   long card at 167 px, with Next following the content without trailing space.
   Inline actions and details include Rename on
-  desktop and mobile. Title updates use the existing VDS title patch.
+  desktop and mobile. Renames sync as a `title` update patch that other devices apply.
   Windows UI and browser preview are checked locally; physical Android and
   live two-device VDS acceptance of renaming remain pending.
   Local gates passed: lint, TypeScript, production build, 163 frontend tests,

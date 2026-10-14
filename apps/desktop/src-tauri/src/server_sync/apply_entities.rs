@@ -37,6 +37,13 @@ pub(super) fn apply_plan_item(
             )
         }
         "update" => {
+            if let Some(title) = string_field(patch, "title") {
+                conn.execute(
+                    "UPDATE plan_items SET title = ?1 WHERE id = ?2",
+                    params![title, operation.entity_id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
             if let Some(status) = string_field(patch, "status") {
                 let progress = patch.get("progressPercent").and_then(Value::as_i64);
                 conn.execute(
