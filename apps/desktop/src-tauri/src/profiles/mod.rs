@@ -10,8 +10,8 @@ mod tests;
 
 // Пути `crate::profiles::X` остаются прежними — реэкспорт из подмодулей.
 pub use accounts::{
-    active_account_identity, active_sync_enabled, configure_active_account, lock_session,
-    set_sync_enabled, unlock_account, verify_account_password, verify_active_password,
+    active_account_identity, configure_active_account, lock_session, unlock_account,
+    verify_account_password, verify_active_password,
 };
 pub use create::{commit_create, prepare_create};
 pub use registry::{
@@ -35,8 +35,6 @@ struct ProfileRecord {
     email: Option<String>,
     #[serde(default)]
     password_hash: Option<String>,
-    #[serde(default)]
-    sync_enabled: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -47,7 +45,6 @@ pub struct ProfileDto {
     pub avatar_color: String,
     pub email: Option<String>,
     pub account_configured: bool,
-    pub sync_enabled: bool,
 }
 
 impl From<&ProfileRecord> for ProfileDto {
@@ -58,7 +55,6 @@ impl From<&ProfileRecord> for ProfileDto {
             avatar_color: record.avatar_color.clone(),
             email: record.email.clone(),
             account_configured: record.email.is_some() && record.password_hash.is_some(),
-            sync_enabled: record.sync_enabled,
         }
     }
 }

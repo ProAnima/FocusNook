@@ -69,7 +69,6 @@ pub fn connect_server_sync(
         None,
         None,
     )?;
-    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
 
@@ -104,7 +103,6 @@ pub async fn connect_default_server_sync(
         None,
         None,
     )?;
-    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
 
@@ -116,8 +114,6 @@ pub fn disconnect_server_sync(
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_credentials(Some(&conn), &profile_id)?;
-    drop(conn);
-    profiles::set_sync_enabled(&profiles_state, false)?;
     Ok(())
 }
 
@@ -153,7 +149,5 @@ pub async fn delete_server_account(
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_credentials(Some(&conn), &profile_id)?;
-    drop(conn);
-    profiles::set_sync_enabled(&profiles_state, false)?;
     Ok(())
 }

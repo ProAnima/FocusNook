@@ -1,5 +1,6 @@
 pub(crate) mod account;
 pub(crate) mod account_auth;
+mod active_account;
 mod apply;
 mod apply_entities;
 mod attachments;
@@ -28,9 +29,12 @@ const FULL_RECONCILE_INTERVAL_SECONDS: i64 = 15 * 60;
 const PRIVACY_POLICY_VERSION: &str = "2026-07-16";
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
+/// Manual and background sync share one serialized run, so two exchanges never interleave.
+static SYNC_RUN_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[cfg(feature = "cloud-providers")]
 pub(crate) use account::ensure_local_device_id;
+pub use active_account::begin_active_account_change;
 #[cfg(feature = "cloud-providers")]
 pub(crate) use apply::{apply_remote_operation, reconcile_remote_reminder_alarm};
 pub use attachments::ensure_audio_blob_downloaded;

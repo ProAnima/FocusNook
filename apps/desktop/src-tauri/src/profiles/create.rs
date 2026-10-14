@@ -45,7 +45,6 @@ pub fn prepare_create(
         keyring_user: format!("vault-key-{id}"),
         email: Some(normalized_email),
         password_hash: Some(hash_password(password)?),
-        sync_enabled: false,
     };
     let vault_path = state.data_dir.join(vault_filename(&id));
     Ok((PendingProfile { record }, vault_path))

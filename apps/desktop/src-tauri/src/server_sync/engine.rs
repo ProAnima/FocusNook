@@ -1,8 +1,9 @@
+use super::active_account::{self, ensure_active_account, ActiveSyncContext};
 use super::apply::{apply_exchange_response, ExchangeScope};
 use super::attachments::{download_pending_blobs, transfer_status_message, upload_pending_blobs};
 use super::credentials::{
-    endpoint_from_config, load_credentials, server_profile_id, status_for_profile,
-    ServerSyncCredentials, ServerSyncStatus,
+    endpoint_from_config, load_credentials, profile_has_credentials, server_profile_id,
+    status_for_profile, ServerSyncCredentials, ServerSyncStatus,
 };
 use super::journal::{
     last_pulled_hlc, mark_full_reconciled, prepare_account_scope_if_needed,
@@ -11,7 +12,7 @@ use super::journal::{
 use super::transport::{exchange_with_server, wait_for_server_event};
 use super::{
     MAX_EXCHANGE_ROUNDS, MAX_OPS_PER_EXCHANGE, PERIODIC_SYNC_INTERVAL, SERVER_EVENT_ERROR_BACKOFF,
-    SYNC_IN_FLIGHT, SYNC_RERUN_REQUESTED,
+    SYNC_IN_FLIGHT, SYNC_RERUN_REQUESTED, SYNC_RUN_GATE,
 };
 use crate::{config, profiles, sync_log};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -69,10 +70,9 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
     let profiles_state = app.state::<profiles::ProfilesState>();
     let hlc_state = app.state::<sync_log::HlcClockState>();
     let audio_key_state = app.state::<crate::AudioKeyState>();
-    if !profiles::active_sync_enabled(&profiles_state)? {
-        return Err("server sync is disabled for this account".to_string());
-    }
+    let account_generation = active_account::current_generation();
     let profile_id = profiles::active_profile_id(&profiles_state)?;
+    ensure_active_account(&profiles_state, &profile_id, account_generation)?;
     let configured = endpoint_from_config(&config).is_ok();
     let audio_dir = profiles::audio_dir(&profiles_state)?;
     let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
@@ -83,6 +83,12 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
             .ok_or_else(|| "server sync account is not connected".to_string())?
     };
     let remote_profile_id = server_profile_id(&credentials, &profile_id);
+    let account = ActiveSyncContext {
+        profiles_state: &profiles_state,
+        generation: account_generation,
+        local_profile_id: &profile_id,
+        remote_profile_id: &remote_profile_id,
+    };
 
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -107,9 +113,8 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
     for _ in 0..MAX_EXCHANGE_ROUNDS {
         let blocked_uploads = upload_pending_blobs(
             &db,
+            &account,
             &credentials,
-            &profile_id,
-            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -133,6 +138,7 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
         let response =
             exchange_with_server(&credentials, &remote_profile_id, last_pulled, &operations)
                 .await?;
+        account.ensure_active()?;
         let pulled_full_page = response.operations.len() == MAX_OPS_PER_EXCHANGE;
         log::debug!(
             "sync exchange: отправлено операций {}, получено {}",
@@ -142,6 +148,7 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
 
         let (next_pull_hlc, _) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
+            account.ensure_active()?;
             let scope = ExchangeScope {
                 app: &app,
                 hlc_state: &hlc_state,
@@ -153,6 +160,7 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
         };
         let (snapshot_queued, exchange_complete) = {
             let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+            account.ensure_active()?;
             store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
             if full_reconcile_active {
                 full_reconcile_cursor = next_pull_hlc.clone();
@@ -176,9 +184,8 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
         };
         let unavailable_audio = download_pending_blobs(
             &db,
+            &account,
             &credentials,
-            &profile_id,
-            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -197,9 +204,25 @@ async fn run_sync_cycle(app: tauri::AppHandle) -> Result<ServerSyncStatus, Strin
     Err("server sync backlog is too large, please run sync again".to_string())
 }
 
-pub fn spawn_best_effort(app: tauri::AppHandle) {
+async fn perform_sync_serialized(app: tauri::AppHandle) -> Result<ServerSyncStatus, String> {
+    let _run = SYNC_RUN_GATE.lock().await;
+    perform_sync(app).await
+}
+
+fn active_account_has_credentials(app: &tauri::AppHandle) -> bool {
+    let db = app.state::<crate::db::Db>();
     let profiles_state = app.state::<profiles::ProfilesState>();
-    if !profiles::active_sync_enabled(&profiles_state).unwrap_or(false) {
+    let Ok(profile_id) = profiles::active_profile_id(&profiles_state) else {
+        return false;
+    };
+    let Ok(conn) = db.0.lock() else {
+        return false;
+    };
+    profile_has_credentials(Some(&conn), &profile_id)
+}
+
+pub fn spawn_best_effort(app: tauri::AppHandle) {
+    if !active_account_has_credentials(&app) {
         return;
     }
     if SYNC_IN_FLIGHT
@@ -213,7 +236,7 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
         let mut result;
         loop {
             SYNC_RERUN_REQUESTED.store(false, Ordering::SeqCst);
-            result = perform_sync(app.clone()).await;
+            result = perform_sync_serialized(app.clone()).await;
             if !SYNC_RERUN_REQUESTED.swap(false, Ordering::SeqCst) {
                 break;
             }
@@ -308,7 +331,7 @@ pub fn spawn_server_event_listener(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn sync_server_now(app: tauri::AppHandle) -> Result<ServerSyncStatus, String> {
-    perform_sync(app).await
+    perform_sync_serialized(app).await
 }
 
 #[tauri::command]

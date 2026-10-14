@@ -9,7 +9,6 @@ const ACCOUNT = {
   avatarColor: "#f2b463",
   email: "i@example.test",
   accountConfigured: true,
-  syncEnabled: false,
 };
 
 describe("AccountGate", () => {

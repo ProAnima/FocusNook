@@ -75,7 +75,6 @@ pub async fn set_account_sync_enabled(
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         delete_credentials(Some(&conn), &profile_id)?;
         drop(conn);
-        profiles::set_sync_enabled(&profiles_state, false)?;
         return server_sync_status(db, config_state, profiles_state);
     }
 
@@ -123,7 +122,6 @@ pub async fn set_account_sync_enabled(
         Some(blob_crypto::derive_media_key(&account.email, &password)),
     )?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     server_sync_status(db, config_state, profiles_state)
 }
@@ -172,7 +170,6 @@ pub async fn register_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }
@@ -214,7 +211,6 @@ pub async fn login_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }

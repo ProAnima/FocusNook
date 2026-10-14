@@ -5,7 +5,7 @@ function browserPreviewAccounts(): ProfilesResponse {
   const mode = new URLSearchParams(window.location.search).get("accountPreview");
   if (mode === "setup") {
     return {
-      profiles: [{ id: "legacy", displayName: "Профиль", avatarColor: "#f2b463", email: null, accountConfigured: false, syncEnabled: false }],
+      profiles: [{ id: "legacy", displayName: "Профиль", avatarColor: "#f2b463", email: null, accountConfigured: false }],
       activeProfileId: "legacy",
       sessionLocked: false,
     };
@@ -13,8 +13,8 @@ function browserPreviewAccounts(): ProfilesResponse {
   if (mode === "locked") {
     return {
       profiles: [
-        { id: "one", displayName: "Ян", avatarColor: "#f2b463", email: "i@example.test", accountConfigured: true, syncEnabled: true },
-        { id: "two", displayName: "Вита", avatarColor: "#7cb9e8", email: "vita@example.test", accountConfigured: true, syncEnabled: false },
+        { id: "one", displayName: "Ян", avatarColor: "#f2b463", email: "i@example.test", accountConfigured: true },
+        { id: "two", displayName: "Вита", avatarColor: "#7cb9e8", email: "vita@example.test", accountConfigured: true },
       ],
       activeProfileId: "one",
       sessionLocked: true,
@@ -27,7 +27,6 @@ function browserPreviewAccounts(): ProfilesResponse {
       avatarColor: "#f2b463",
       email: "preview@example.test",
       accountConfigured: true,
-      syncEnabled: false,
     }],
     activeProfileId: "preview-account",
     sessionLocked: false,

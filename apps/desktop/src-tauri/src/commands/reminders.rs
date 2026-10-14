@@ -97,6 +97,7 @@ pub(crate) async fn get_reminder_audio(
     };
     server_sync::ensure_audio_blob_downloaded(
         &db,
+        &profiles_state,
         &profile_id,
         &dir,
         audio_key.as_deref(),
