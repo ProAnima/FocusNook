@@ -19,6 +19,9 @@ import { useTheme } from "./shared/useTheme";
 import type { ResolvedTheme } from "./shared/theme-context";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { DayView } from "./components/DayView";
+import { ZenView } from "./components/ZenView";
+import { useZenMode } from "./shared/useZenMode";
+import { ZenHeader } from "./components/ZenHeader";
 import { NotesView } from "./components/NotesView";
 import { RemindersView } from "./components/RemindersView";
 import { ReminderAlert } from "./components/ReminderAlert";
@@ -86,23 +89,26 @@ interface DesktopShellProps {
 function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide, accounts }: DesktopShellProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("day");
   const [showSettings, setShowSettings] = useState(false);
+  const { active: zenMode, toggle: toggleZen } = useZenMode();
   const { activeProfileId, activeProfile, logout } = accounts;
   const mainTabs = useMainTabs();
 
   return (
-    <div className="desktop-stage" data-folder-rail-side={folderRailSide}>
+    <div className={`desktop-stage${zenMode ? " is-zen" : ""}`} data-folder-rail-side={folderRailSide}>
       <div className="overlay-shell">
         <LiveBackground theme={theme} />
-        <OverlayHeader
+        {zenMode ? <ZenHeader onExit={() => void toggleZen()} /> : <OverlayHeader
+          zenMode={zenMode}
+          onToggleZen={() => { void toggleZen(); setShowSettings(false); }}
           front={front}
           onToggleLayer={toggleLayer}
           showSettings={showSettings}
           onToggleSettings={() => setShowSettings((value) => !value)}
           account={activeProfile!}
           onLogout={() => void logout()}
-        />
+        />}
 
-        {!showSettings && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
+        {!showSettings && !zenMode && <TabBar tabs={mainTabs} active={activeTab} onSelect={setActiveTab} />}
 
         <main className="body">
           {showSettings ? (
@@ -111,6 +117,8 @@ function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide,
               onClose={() => setShowSettings(false)}
               isDesktop
             />
+          ) : zenMode ? (
+            <ZenView key={activeProfileId} />
           ) : (
             <TabContent
               key={activeProfileId}
@@ -121,7 +129,7 @@ function DesktopShell({ front, toggleLayer, shortcutInfo, theme, folderRailSide,
             />
           )}
         </main>
-        <WindowResizeHandles />
+        <WindowResizeHandles zenMode={zenMode} />
       </div>
     </div>
   );

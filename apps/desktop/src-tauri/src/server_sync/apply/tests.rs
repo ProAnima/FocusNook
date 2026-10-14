@@ -137,6 +137,41 @@ fn stale_remote_update_does_not_overwrite_newer_local_plan_item() -> Result<(), 
 }
 
 #[test]
+fn remote_title_update_renames_plan_item() -> Result<(), String> {
+    let conn = sync_test_conn();
+    conn.execute(
+        "INSERT INTO plan_items
+            (id, title, status, progress_percent, plan_date, created_at)
+         VALUES ('task-1', 'Call', 'open', NULL, '2026-07-07', datetime('now'))",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    let rename = RemoteOperation {
+        device_id: "phone-device".to_string(),
+        entity_id: "task-1".to_string(),
+        entity_type: "plan_item".to_string(),
+        hlc: "2026-07-07T10:00:00.000Z-0000-phone-device".to_string(),
+        op: "update".to_string(),
+        operation_id: "remote-rename-op".to_string(),
+        payload_ciphertext: serde_json::json!({ "title": "Call the bank" }).to_string(),
+        schema_version: 1,
+    };
+
+    apply_remote_operation(&conn, "profile-1", "desktop-device", &rename, None)?;
+
+    let (title, status): (String, String) = conn
+        .query_row(
+            "SELECT title, status FROM plan_items WHERE id = 'task-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(title, "Call the bank");
+    assert_eq!(status, "open");
+    Ok(())
+}
+
+#[test]
 fn newer_remote_delete_wins_over_older_local_plan_item() -> Result<(), String> {
     let conn = sync_test_conn();
     conn.execute(

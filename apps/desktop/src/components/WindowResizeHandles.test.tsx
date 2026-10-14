@@ -33,4 +33,9 @@ describe("WindowResizeHandles", () => {
 
     expect(resizeBy).toHaveBeenCalledWith(16, 0);
   });
+  it("uses compact height limits for Zen keyboard resizing", () => {
+    render(<WindowResizeHandles zenMode />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "header.resize" }), { key: "ArrowDown" });
+    expect(resizeBy).toHaveBeenCalledWith(0, 16, true);
+  });
 });

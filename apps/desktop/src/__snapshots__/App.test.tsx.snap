@@ -40,7 +40,46 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
           class="header-actions"
         >
           <button
+            aria-label="Включить Zen Mode"
+            aria-pressed="false"
+            class="icon-button "
+            title="Включить Zen Mode"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-focus"
+              fill="none"
+              height="14"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="14"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="3"
+              />
+              <path
+                d="M3 7V5a2 2 0 0 1 2-2h2"
+              />
+              <path
+                d="M17 3h2a2 2 0 0 1 2 2v2"
+              />
+              <path
+                d="M21 17v2a2 2 0 0 1-2 2h-2"
+              />
+              <path
+                d="M7 21H5a2 2 0 0 1-2-2v-2"
+              />
+            </svg>
+          </button>
+          <button
             aria-label="Убрать с переднего плана"
+            aria-pressed="true"
             class="icon-button is-active"
             title="Убрать с переднего плана"
           >
@@ -67,6 +106,7 @@ exports[`App layout snapshots > matches the desktop shell layout 1`] = `
           </button>
           <button
             aria-label="Настройки"
+            aria-pressed="false"
             class="icon-button "
             title="Настройки"
           >

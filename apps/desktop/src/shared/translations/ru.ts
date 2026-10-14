@@ -4,6 +4,12 @@
 // вложенную структуру. `en` типизирован как Record<keyof typeof ru, string> —
 // TypeScript не даст забыть перевод при добавлении нового ключа в ru.
 export const ru = {
+  "zen.enter": "Включить Zen Mode",
+  "zen.exit": "Выйти из Zen Mode",
+  "zen.next": "Следующее",
+  "zen.finished": "На сегодня всё",
+  "day.rename": "Переименовать",
+  "day.renameError": "Не удалось сохранить название",
   "nav.day": "День",
   "nav.notes": "Заметки",
   "nav.reminders": "Напоминания",

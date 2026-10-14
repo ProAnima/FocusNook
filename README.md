@@ -40,6 +40,18 @@ Implemented today:
   plaintext-vault migration support on desktop.
 - Today, Notes, Reminders, Settings, profile switching, and diagnostics UI,
   shared between desktop and Android.
+- Desktop Zen Mode (focus icon beside pin) shows unfinished tasks from today's
+  list, including long-running tasks, one at a time. Next cycles through the
+  unfinished tasks without changing their status; completed tasks leave the ring.
+  The final screen says "All done for today" only when no unfinished tasks remain.
+  Zen Mode hides the normal header and fits window height to the task and Next
+  button (72–180 px limits), leaving a 4 px gap without unused space underneath,
+  with an exit button at the top right. Exiting restores the previous window size;
+  compact geometry is not persisted as the normal size. Task titles wrap, and
+  task lists and rename dialogs use the same thin scrollbar style as Settings.
+  Task actions stay beside the title when both fit; otherwise they move above it.
+  Tasks can be renamed from their inline actions
+  or details dialog; title changes are persisted and included in VDS sync.
 - Audio note capture with encrypted desktop audio blobs.
 - Reminder alert window with snooze and acknowledge actions.
 - VDS sync server: accounts, device linking, operation-log exchange,

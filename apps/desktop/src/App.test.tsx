@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 // Раздел 21 ТЗ: "layout snapshots для compact desktop/mobile" — снимок всей
@@ -12,6 +13,8 @@ vi.mock("./shared/commands", () => {
   return {
     commands: {
       overlay: {
+        getZenMode: () => Promise.resolve(false),
+        resizeZenWindow: () => Promise.resolve(),
         toggle: reject,
         onLayerChanged: () => Promise.resolve(() => {}),
         getShortcutStatus: () => Promise.resolve(null),
@@ -104,6 +107,20 @@ function normalizeDynamicDate(container: HTMLElement) {
 }
 
 describe("App layout snapshots", () => {
+  it("enters Zen Mode from the header and restores navigation on exit", async () => {
+    isDesktop.mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Включить Zen Mode" }));
+    expect(await screen.findByText("На сегодня всё")).toBeInTheDocument();
+    expect(screen.queryByText("FocusNook")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Убрать с переднего плана" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Настройки" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Закрыть" })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Добавить дело...")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Выйти из Zen Mode" }));
+    expect(await screen.findByText("На сегодня пока ничего не запланировано")).toBeInTheDocument();
+  });
   it("matches the desktop shell layout", async () => {
     isDesktop.mockResolvedValue(true);
     const { container } = render(<App />);

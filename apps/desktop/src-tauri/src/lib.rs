@@ -26,6 +26,7 @@ mod sync_status;
 #[cfg(feature = "cloud-providers")]
 mod sync_tokens;
 mod window_state;
+mod zen_window;
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -332,6 +333,10 @@ pub fn run() {
             commands::plan_items::list_plan_items,
             commands::plan_items::list_plan_items_range,
             commands::plan_items::create_plan_item,
+            commands::plan_items::rename_plan_item,
+            commands::overlay::set_zen_mode,
+            commands::overlay::get_zen_mode,
+            commands::overlay::resize_zen_window,
             commands::plan_items::toggle_plan_item_done,
             commands::plan_items::cycle_plan_item_progress,
             commands::plan_items::toggle_plan_item_deferred,

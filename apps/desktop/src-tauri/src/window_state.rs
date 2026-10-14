@@ -127,6 +127,9 @@ pub fn reapply_size_after_scale_change(
     data_dir: &Path,
     scale_factor: f64,
 ) {
+    if crate::zen_window::is_active() {
+        return;
+    }
     let Some(state) = load_state(data_dir) else {
         return;
     };
@@ -134,7 +137,7 @@ pub fn reapply_size_after_scale_change(
 }
 
 pub fn save(window: &tauri::WebviewWindow, data_dir: &Path) -> Result<(), String> {
-    if window.label() != "main" {
+    if window.label() != "main" || crate::zen_window::is_active() {
         return Ok(());
     }
     let physical_size = window.outer_size().map_err(|e| e.to_string())?;

@@ -93,7 +93,33 @@ letting it drift the way the old Iteration 0-3 roadmap did.
 - `planner-core` / `planner-sync` / `planner-storage` crate extraction from
   `apps/desktop/src-tauri/src` into standalone crates.
 
-## Implemented, pending physical release acceptance (updated 2026-08-21)
+## Implemented, pending physical release acceptance (updated 2026-10-12)
+
+- Zen Mode and task rename (2026-10-12): desktop focus icon beside pin opens a
+  one-task view of unfinished items in today's list, including long-running
+  items. Next cycles through unfinished tasks without changing their status;
+  completed tasks leave the ring, and the view ends only when none remain.
+  Zen Mode fits height to the card and Next button within 72–180 px limits, with a single
+  exit button at the top right. Normal geometry is restored on exit and is not
+  overwritten by compact geometry. Lists and rename dialogs use Settings-style
+  thin scrollbars; task titles wrap in narrow windows.
+  Inline actions remain beside the title when both fit; otherwise they move above
+  it. The renderer restores the native Zen state after reload.
+  Next follows the task card with a 4 px gap; unused height below the button is
+  removed by native content sizing, while long titles retain a scrollable area.
+  Native geometry commands require live-window validation; they have no mock
+  WebviewWindow infrastructure and are not covered by Rust unit tests.
+  Live Windows checks observed the empty view shrink to 72 px and restore its
+  previous 260 px height on exit. A cross-monitor DPI pass remains pending.
+  At 280 px width, browser checks observed a short card at 85 px height and a
+  long card at 167 px, with Next following the content without trailing space.
+  Inline actions and details include Rename on
+  desktop and mobile. Renames sync as a `title` update patch that other devices apply.
+  Windows UI and browser preview are checked locally; physical Android and
+  live two-device VDS acceptance of renaming remain pending.
+  Local gates passed: lint, TypeScript, production build, 163 frontend tests,
+  desktop fmt/Clippy + 135 tests, and server fmt/Clippy + 23 tests. Desktop test
+  linking reports OpenSSL LNK4099 debug-symbol warnings; Clippy is clean.
 
 - Account sync now has one source of truth: the stored per-account server
   session. The redundant `profiles.json` enablement flag was removed because

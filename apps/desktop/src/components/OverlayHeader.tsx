@@ -1,4 +1,4 @@
-import { Pin, PinOff, Settings as SettingsIcon, X, type LucideIcon } from "lucide-react";
+import { Pin, PinOff, Focus, Settings as SettingsIcon, X, type LucideIcon } from "lucide-react";
 import { commands, type Profile } from "../shared/commands";
 import { useLocale } from "../shared/useLocale";
 import { ProfileSwitcher } from "./ProfileSwitcher";
@@ -20,6 +20,7 @@ function HeaderButton({
       onClick={onClick}
       title={title}
       aria-label={title}
+      aria-pressed={active}
     >
       <Icon size={14} />
     </button>
@@ -27,6 +28,8 @@ function HeaderButton({
 }
 
 interface OverlayHeaderProps {
+  zenMode: boolean;
+  onToggleZen: () => void;
   front: boolean;
   onToggleLayer: () => void;
   showSettings: boolean;
@@ -38,6 +41,8 @@ interface OverlayHeaderProps {
 // Только для десктопа (см. App.tsx::DesktopShell) — на Android своя шапка
 // (MobileShell), always-on-top и это меню там не нужны.
 export function OverlayHeader({
+  zenMode,
+  onToggleZen,
   front,
   onToggleLayer,
   showSettings,
@@ -56,6 +61,7 @@ export function OverlayHeader({
         <span className="brand">FocusNook</span>
       </div>
       <div className="header-actions">
+        <HeaderButton icon={Focus} active={zenMode} onClick={onToggleZen} title={zenMode ? t("zen.exit") : t("zen.enter")} />
         <HeaderButton
           icon={front ? Pin : PinOff}
           active={front}
