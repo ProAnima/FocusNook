@@ -21,8 +21,6 @@ struct ProfileRecord {
     email: Option<String>,
     #[serde(default)]
     password_hash: Option<String>,
-    #[serde(default)]
-    sync_enabled: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -33,7 +31,6 @@ pub struct ProfileDto {
     pub avatar_color: String,
     pub email: Option<String>,
     pub account_configured: bool,
-    pub sync_enabled: bool,
 }
 
 impl From<&ProfileRecord> for ProfileDto {
@@ -44,7 +41,6 @@ impl From<&ProfileRecord> for ProfileDto {
             avatar_color: record.avatar_color.clone(),
             email: record.email.clone(),
             account_configured: record.email.is_some() && record.password_hash.is_some(),
-            sync_enabled: record.sync_enabled,
         }
     }
 }
@@ -124,7 +120,6 @@ fn load_or_migrate(data_dir: &Path) -> Result<ProfilesFile, String> {
             keyring_user,
             email: None,
             password_hash: None,
-            sync_enabled: false,
         }],
         active_profile_id: Some(id),
         session_locked: false,
@@ -304,35 +299,6 @@ pub fn unlock_account(
     save(&state.data_dir, &file)
 }
 
-pub fn set_sync_enabled(state: &ProfilesState, enabled: bool) -> Result<ProfilesResponse, String> {
-    let mut file = state.file.lock().map_err(|e| e.to_string())?;
-    let active_id = file
-        .active_profile_id
-        .clone()
-        .ok_or_else(|| "no active account".to_string())?;
-    let record = file
-        .profiles
-        .iter_mut()
-        .find(|record| record.id == active_id)
-        .ok_or_else(|| "active account not found".to_string())?;
-    record.sync_enabled = enabled;
-    save(&state.data_dir, &file)?;
-    to_response(&file)
-}
-
-pub fn active_sync_enabled(state: &ProfilesState) -> Result<bool, String> {
-    let file = state.file.lock().map_err(|e| e.to_string())?;
-    let active_id = file
-        .active_profile_id
-        .as_deref()
-        .ok_or_else(|| "no active account".to_string())?;
-    file.profiles
-        .iter()
-        .find(|record| record.id == active_id)
-        .map(|record| record.sync_enabled)
-        .ok_or_else(|| "active account not found".to_string())
-}
-
 pub fn active_account_identity(state: &ProfilesState) -> Result<(String, String), String> {
     let file = state.file.lock().map_err(|e| e.to_string())?;
     let active_id = file
@@ -449,7 +415,6 @@ pub fn prepare_create(
         keyring_user: format!("vault-key-{id}"),
         email: Some(normalized_email),
         password_hash: Some(hash_password(password)?),
-        sync_enabled: false,
     };
     let vault_path = state.data_dir.join(vault_filename(&id));
     Ok((PendingProfile { record }, vault_path))

@@ -3,7 +3,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{Emitter, Manager};
 
 #[cfg(not(target_os = "android"))]
@@ -23,6 +23,8 @@ const FULL_RECONCILE_INTERVAL_SECONDS: i64 = 15 * 60;
 const PRIVACY_POLICY_VERSION: &str = "2026-07-16";
 static SYNC_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SYNC_RERUN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static ACTIVE_ACCOUNT_GENERATION: AtomicU64 = AtomicU64::new(0);
+static SYNC_RUN_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn http_client(timeout: std::time::Duration) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
@@ -302,7 +304,6 @@ pub fn connect_server_sync(
         None,
         None,
     )?;
-    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
 
@@ -943,11 +944,14 @@ async fn download_blob(
 
 pub async fn ensure_audio_blob_downloaded(
     db: &crate::db::Db,
+    profiles_state: &profiles::ProfilesState,
     profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
     blob_id: &str,
 ) -> Result<(), String> {
+    let account_generation = ACTIVE_ACCOUNT_GENERATION.load(Ordering::SeqCst);
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     if sync_blobs::audio_file_path(audio_dir, blob_id)?.exists() {
         return Ok(());
     }
@@ -968,7 +972,9 @@ pub async fn ensure_audio_blob_downloaded(
             "audio blob {blob_id} is missing on the sync server"
         ));
     };
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_active_account(profiles_state, profile_id, account_generation)?;
     sync_blobs::materialize_download(
         &conn,
         profile_id,
@@ -982,15 +988,19 @@ pub async fn ensure_audio_blob_downloaded(
 
 async fn upload_pending_blobs(
     db: &crate::db::Db,
+    account: &ActiveSyncContext<'_>,
     credentials: &ServerSyncCredentials,
-    local_profile_id: &str,
-    remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
 ) -> Result<usize, String> {
+    account.ensure_active()?;
     let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        sync_blobs::pending_uploads_for_remote(&conn, local_profile_id, remote_profile_id)?
+        sync_blobs::pending_uploads_for_remote(
+            &conn,
+            account.local_profile_id,
+            account.remote_profile_id,
+        )?
     };
     let mut blocked = 0;
     for record in pending {
@@ -1015,8 +1025,8 @@ async fn upload_pending_blobs(
             let conn = db.0.lock().map_err(|e| e.to_string())?;
             sync_blobs::upload_request(
                 &conn,
-                local_profile_id,
-                remote_profile_id,
+                account.local_profile_id,
+                account.remote_profile_id,
                 audio_dir,
                 audio_key,
                 media_key,
@@ -1045,24 +1055,37 @@ async fn upload_pending_blobs(
                 continue;
             }
         };
+        account.ensure_active()?;
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        sync_blobs::mark_uploaded(&conn, local_profile_id, &blob_id, &sha256, size_bytes)?;
-        sync_blobs::mark_uploaded_to(&conn, local_profile_id, &blob_id, remote_profile_id)?;
+        account.ensure_active()?;
+        sync_blobs::mark_uploaded(
+            &conn,
+            account.local_profile_id,
+            &blob_id,
+            &sha256,
+            size_bytes,
+        )?;
+        sync_blobs::mark_uploaded_to(
+            &conn,
+            account.local_profile_id,
+            &blob_id,
+            account.remote_profile_id,
+        )?;
     }
     Ok(blocked)
 }
 
 async fn download_pending_blobs(
     db: &crate::db::Db,
+    account: &ActiveSyncContext<'_>,
     credentials: &ServerSyncCredentials,
-    local_profile_id: &str,
-    remote_profile_id: &str,
     audio_dir: &std::path::Path,
     audio_key: Option<&str>,
 ) -> Result<usize, String> {
+    account.ensure_active()?;
     let pending = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        sync_blobs::pending_downloads(&conn, local_profile_id)?
+        sync_blobs::pending_downloads(&conn, account.local_profile_id)?
     };
     let mut unavailable = 0;
     for blob_id in pending {
@@ -1074,7 +1097,8 @@ async fn download_pending_blobs(
             unavailable += 1;
             continue;
         };
-        let downloaded = match download_blob(credentials, remote_profile_id, &blob_id).await {
+        let downloaded = match download_blob(credentials, account.remote_profile_id, &blob_id).await
+        {
             Ok(Some(downloaded)) => downloaded,
             Ok(None) => {
                 eprintln!("server-sync: attachment {blob_id} is not available on the server");
@@ -1087,10 +1111,12 @@ async fn download_pending_blobs(
                 continue;
             }
         };
+        account.ensure_active()?;
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        account.ensure_active()?;
         if let Err(err) = sync_blobs::materialize_download(
             &conn,
-            local_profile_id,
+            account.local_profile_id,
             audio_dir,
             audio_key,
             media_key,
@@ -1630,10 +1656,9 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     let profiles_state = app.state::<profiles::ProfilesState>();
     let hlc_state = app.state::<sync_log::HlcClockState>();
     let audio_key_state = app.state::<crate::AudioKeyState>();
-    if !profiles::active_sync_enabled(&profiles_state)? {
-        return Err("server sync is disabled for this account".to_string());
-    }
+    let account_generation = ACTIVE_ACCOUNT_GENERATION.load(Ordering::SeqCst);
     let profile_id = profiles::active_profile_id(&profiles_state)?;
+    ensure_active_account(&profiles_state, &profile_id, account_generation)?;
     let configured = endpoint_from_config(&config).is_ok();
     let audio_dir = profiles::audio_dir(&profiles_state)?;
     let audio_key = audio_key_state.0.lock().map_err(|e| e.to_string())?.clone();
@@ -1644,6 +1669,12 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
             .ok_or_else(|| "server sync account is not connected".to_string())?
     };
     let remote_profile_id = server_profile_id(&credentials, &profile_id);
+    let account = ActiveSyncContext {
+        profiles_state: &profiles_state,
+        generation: account_generation,
+        local_profile_id: &profile_id,
+        remote_profile_id: &remote_profile_id,
+    };
 
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -1668,9 +1699,8 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     for _ in 0..MAX_EXCHANGE_ROUNDS {
         let blocked_uploads = upload_pending_blobs(
             &db,
+            &account,
             &credentials,
-            &profile_id,
-            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -1694,10 +1724,12 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         let response =
             exchange_with_server(&credentials, &remote_profile_id, last_pulled, &operations)
                 .await?;
+        ensure_active_account(&profiles_state, &profile_id, account_generation)?;
         let pulled_full_page = response.operations.len() == MAX_OPS_PER_EXCHANGE;
 
         let (next_pull_hlc, _) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
+            ensure_active_account(&profiles_state, &profile_id, account_generation)?;
             apply_exchange_response(
                 &app,
                 &conn,
@@ -1711,6 +1743,7 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         };
         let (snapshot_queued, exchange_complete) = {
             let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+            ensure_active_account(&profiles_state, &profile_id, account_generation)?;
             store_last_pulled_hlc(&conn, &remote_profile_id, next_pull_hlc.as_deref())?;
             if full_reconcile_active {
                 full_reconcile_cursor = next_pull_hlc.clone();
@@ -1734,9 +1767,8 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
         };
         let unavailable_audio = download_pending_blobs(
             &db,
+            &account,
             &credentials,
-            &profile_id,
-            &remote_profile_id,
             &audio_dir,
             audio_key.as_deref(),
         )
@@ -1755,9 +1787,70 @@ async fn perform_sync(app: tauri::AppHandle) -> Result<ServerSyncStatus, String>
     Err("server sync backlog is too large, please run sync again".to_string())
 }
 
+async fn perform_sync_serialized(app: tauri::AppHandle) -> Result<ServerSyncStatus, String> {
+    let _run = SYNC_RUN_GATE.lock().await;
+    perform_sync(app).await
+}
+
+struct ActiveSyncContext<'a> {
+    profiles_state: &'a profiles::ProfilesState,
+    generation: u64,
+    local_profile_id: &'a str,
+    remote_profile_id: &'a str,
+}
+
+impl ActiveSyncContext<'_> {
+    fn ensure_active(&self) -> Result<(), String> {
+        ensure_active_account(self.profiles_state, self.local_profile_id, self.generation)
+    }
+}
+
+fn ensure_active_account(
+    profiles_state: &profiles::ProfilesState,
+    expected_profile_id: &str,
+    expected_generation: u64,
+) -> Result<(), String> {
+    let current_generation = ACTIVE_ACCOUNT_GENERATION.load(Ordering::SeqCst);
+    let current_profile_id = profiles::active_profile_id(profiles_state)?;
+    if !active_account_matches(
+        expected_profile_id,
+        expected_generation,
+        &current_profile_id,
+        current_generation,
+    ) {
+        return Err("active account changed during sync".to_string());
+    }
+    Ok(())
+}
+
+fn active_account_matches(
+    expected_profile_id: &str,
+    expected_generation: u64,
+    current_profile_id: &str,
+    current_generation: u64,
+) -> bool {
+    expected_generation.is_multiple_of(2)
+        && expected_generation == current_generation
+        && expected_profile_id == current_profile_id
+}
+
+pub struct ActiveAccountChangeGuard;
+
+impl Drop for ActiveAccountChangeGuard {
+    fn drop(&mut self) {
+        ACTIVE_ACCOUNT_GENERATION.fetch_add(1, Ordering::SeqCst);
+        SYNC_RERUN_REQUESTED.store(true, Ordering::SeqCst);
+    }
+}
+
+pub fn begin_active_account_change() -> ActiveAccountChangeGuard {
+    ACTIVE_ACCOUNT_GENERATION.fetch_add(1, Ordering::SeqCst);
+    SYNC_RERUN_REQUESTED.store(true, Ordering::SeqCst);
+    ActiveAccountChangeGuard
+}
+
 pub fn spawn_best_effort(app: tauri::AppHandle) {
-    let profiles_state = app.state::<profiles::ProfilesState>();
-    if !profiles::active_sync_enabled(&profiles_state).unwrap_or(false) {
+    if !active_account_has_credentials(&app) {
         return;
     }
     if SYNC_IN_FLIGHT
@@ -1771,7 +1864,7 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
         let mut result;
         loop {
             SYNC_RERUN_REQUESTED.store(false, Ordering::SeqCst);
-            result = perform_sync(app.clone()).await;
+            result = perform_sync_serialized(app.clone()).await;
             if !SYNC_RERUN_REQUESTED.swap(false, Ordering::SeqCst) {
                 break;
             }
@@ -1791,6 +1884,22 @@ pub fn spawn_best_effort(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+fn active_account_has_credentials(app: &tauri::AppHandle) -> bool {
+    let db = app.state::<crate::db::Db>();
+    let profiles_state = app.state::<profiles::ProfilesState>();
+    let Ok(profile_id) = profiles::active_profile_id(&profiles_state) else {
+        return false;
+    };
+    let Ok(conn) = db.0.lock() else {
+        return false;
+    };
+    profile_has_credentials(Some(&conn), &profile_id)
+}
+
+fn profile_has_credentials(conn: Option<&Connection>, profile_id: &str) -> bool {
+    matches!(load_credentials(conn, profile_id), Ok(Some(_)))
 }
 
 pub fn spawn_periodic_best_effort(app: tauri::AppHandle) {
@@ -1862,7 +1971,7 @@ pub fn spawn_server_event_listener(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn sync_server_now(app: tauri::AppHandle) -> Result<ServerSyncStatus, String> {
-    perform_sync(app).await
+    perform_sync_serialized(app).await
 }
 
 #[tauri::command]
@@ -1901,7 +2010,6 @@ pub async fn connect_default_server_sync(
         None,
         None,
     )?;
-    profiles::set_sync_enabled(&profiles_state, true)?;
     status_for_profile(Some(&conn), &profile_id, true, None)
 }
 
@@ -1920,7 +2028,6 @@ pub async fn set_account_sync_enabled(
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         delete_credentials(Some(&conn), &profile_id)?;
         drop(conn);
-        profiles::set_sync_enabled(&profiles_state, false)?;
         return server_sync_status(db, config_state, profiles_state);
     }
 
@@ -1968,7 +2075,6 @@ pub async fn set_account_sync_enabled(
         Some(blob_crypto::derive_media_key(&account.email, &password)),
     )?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     server_sync_status(db, config_state, profiles_state)
 }
@@ -2017,7 +2123,6 @@ pub async fn register_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }
@@ -2059,7 +2164,6 @@ pub async fn login_server_account(
     )?;
     let status = status_for_profile(Some(&conn), &profile_id, true, None)?;
     drop(conn);
-    profiles::set_sync_enabled(&profiles_state, true)?;
     spawn_best_effort(app);
     Ok(status)
 }
@@ -2072,8 +2176,6 @@ pub fn disconnect_server_sync(
     let profile_id = profiles::active_profile_id(&profiles_state)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_credentials(Some(&conn), &profile_id)?;
-    drop(conn);
-    profiles::set_sync_enabled(&profiles_state, false)?;
     Ok(())
 }
 
@@ -2109,8 +2211,6 @@ pub async fn delete_server_account(
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_credentials(Some(&conn), &profile_id)?;
-    drop(conn);
-    profiles::set_sync_enabled(&profiles_state, false)?;
     Ok(())
 }
 
@@ -2252,6 +2352,7 @@ mod tests {
     #[test]
     fn stores_server_credentials_per_profile() -> Result<(), String> {
         let profile_id = unique_profile_id();
+        assert!(!profile_has_credentials(None, &profile_id));
 
         store_credentials(
             None,
@@ -2262,6 +2363,7 @@ mod tests {
             None,
             None,
         )?;
+        assert!(profile_has_credentials(None, &profile_id));
 
         let status = status_for_profile(None, &profile_id, true, None)?;
         assert_eq!(
@@ -2279,6 +2381,7 @@ mod tests {
         );
 
         delete_credentials(None, &profile_id)?;
+        assert!(!profile_has_credentials(None, &profile_id));
         Ok(())
     }
 
@@ -2324,6 +2427,14 @@ mod tests {
             server_profile_id(&credentials, "local-profile-id"),
             "account-user-id"
         );
+    }
+
+    #[test]
+    fn sync_context_expires_when_the_active_account_changes() {
+        assert!(active_account_matches("account-a", 2, "account-a", 2));
+        assert!(!active_account_matches("account-a", 2, "account-b", 2));
+        assert!(!active_account_matches("account-a", 2, "account-a", 4));
+        assert!(!active_account_matches("account-a", 3, "account-a", 3));
     }
 
     #[test]

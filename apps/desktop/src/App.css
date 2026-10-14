@@ -4056,6 +4056,8 @@ textarea {
 .account-sync-confirm { display: grid; gap: 10px; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--divider); }
 .account-sync-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .account-sync-actions > button { min-height: 36px; }
+.account-sync-connected { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--divider); }
+.account-sync-connected > span { min-width: 0; overflow: hidden; color: var(--text-tertiary); text-overflow: ellipsis; white-space: nowrap; }
 .server-sync-advanced > summary { padding: 8px 0; color: var(--text-tertiary); cursor: pointer; font-size: 11px; }
 
 @media (max-width: 600px) {

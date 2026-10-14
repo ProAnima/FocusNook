@@ -230,6 +230,7 @@ fn create_profile(
 ) -> Result<profiles::ProfilesResponse, String> {
     let (pending, vault_path) = profiles::prepare_create(&state, &display_name, &email, &password)?;
     let data_dir = profiles::data_dir(&state).to_path_buf();
+    let sync_change = server_sync::begin_active_account_change();
     install_vault(
         &app,
         &db,
@@ -240,6 +241,8 @@ fn create_profile(
         pending.keyring_user(),
     )?;
     profiles::commit_create(&state, pending)?;
+    drop(sync_change);
+    server_sync::spawn_best_effort(app);
     profiles::list(&state)
 }
 
@@ -271,8 +274,11 @@ fn switch_active_profile(
     password: String,
 ) -> Result<profiles::ProfilesResponse, String> {
     profiles::verify_account_password(&state, &id, &password)?;
+    let sync_change = server_sync::begin_active_account_change();
     switch_vault(&app, &db, &hlc_state, &audio_key_state, &state, &id)?;
     profiles::unlock_account(&state, &id, &password)?;
+    drop(sync_change);
+    server_sync::spawn_best_effort(app);
     profiles::list(&state)
 }
 
@@ -620,6 +626,7 @@ async fn get_note_audio(
     };
     server_sync::ensure_audio_blob_downloaded(
         &db,
+        &profiles_state,
         &profile_id,
         &dir,
         audio_key.as_deref(),
@@ -803,6 +810,7 @@ async fn get_reminder_audio(
     };
     server_sync::ensure_audio_blob_downloaded(
         &db,
+        &profiles_state,
         &profile_id,
         &dir,
         audio_key.as_deref(),

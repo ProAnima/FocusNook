@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Check, ChevronDown, KeyRound, Mic, RefreshCw, Server, ShieldCheck, UserRound, X } from "lucide-react";
+import { Activity, Check, ChevronDown, KeyRound, Mic, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useTheme, type ThemeMode } from "../shared/useTheme";
 import { commands, type Locale, type NoteFolderSort } from "../shared/commands";
 import { ThemePicker } from "./ThemePicker";
@@ -8,8 +8,6 @@ import { useLocale } from "../shared/useLocale";
 import type { ShortcutInfo } from "../shared/useLayerToggle";
 import { useOutsideClick } from "../shared/useOutsideClick";
 import { useMicrophoneSettings } from "../shared/useMicrophoneSettings";
-
-const MIN_SERVER_PASSWORD_LENGTH = 7;
 
 function AppearanceSection({
   mode,
@@ -321,280 +319,10 @@ function SyncReadinessCard() {
   );
 }
 
-function ServerSyncRow() {
-  const { t } = useLocale();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [available, setAvailable] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [accountEmail, setAccountEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [mediaReady, setMediaReady] = useState(false);
-  const [savedEndpoint, setSavedEndpoint] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [repairPassword, setRepairPassword] = useState("");
-  const [privacyAccepted, setPrivacyAccepted] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const passwordLength = Array.from(password).length;
-  const registerPasswordInvalid = mode === "register" && passwordLength < MIN_SERVER_PASSWORD_LENGTH;
-  const registerPasswordTooShort = mode === "register" && passwordLength > 0 && registerPasswordInvalid;
-
-  const refresh = useCallback(() => {
-    commands.serverSync
-      .status()
-      .then((status) => {
-        setAvailable(status.available);
-        setConnected(status.connected);
-        setAccountEmail(status.accountEmail);
-        setDisplayName(status.displayName);
-        setMediaReady(status.mediaReady);
-        setSavedEndpoint(status.endpoint);
-      })
-      .catch(() => {
-        setAvailable(false);
-        setConnected(false);
-        setAccountEmail(null);
-        setDisplayName(null);
-        setMediaReady(false);
-        setSavedEndpoint(null);
-      });
-  }, []);
-
-  useEffect(() => refresh(), [refresh]);
-
-  async function handleClick() {
-    setError(false);
-    if (!connected && registerPasswordInvalid) {
-      return;
-    }
-    setBusy(true);
-    try {
-      if (connected) {
-        await commands.serverSync.disconnect();
-        setConnected(false);
-        setAccountEmail(null);
-        setDisplayName(null);
-        setMediaReady(false);
-      } else {
-        const nextEmail = email.trim();
-        const nextName = name.trim();
-        const status =
-          mode === "register"
-            ? await commands.serverSync.register(nextEmail, password, nextName, privacyAccepted)
-            : await commands.serverSync.login(nextEmail, password);
-        setAvailable(status.available);
-        setConnected(status.connected);
-        setAccountEmail(status.accountEmail);
-        setDisplayName(status.displayName);
-        setMediaReady(status.mediaReady);
-        setSavedEndpoint(status.endpoint);
-        setPassword("");
-      }
-      refresh();
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleMediaRepair() {
-    const nextEmail = accountEmail || email.trim();
-    if (!nextEmail || !repairPassword) {
-      return;
-    }
-    setBusy(true);
-    setError(false);
-    try {
-      const status = await commands.serverSync.login(nextEmail, repairPassword);
-      setAvailable(status.available);
-      setConnected(status.connected);
-      setAccountEmail(status.accountEmail);
-      setDisplayName(status.displayName);
-      setMediaReady(status.mediaReady);
-      setSavedEndpoint(status.endpoint);
-      setRepairPassword("");
-      refresh();
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDeleteAccount() {
-    if (!deletePassword) {
-      return;
-    }
-    setBusy(true);
-    setError(false);
-    try {
-      await commands.serverSync.deleteAccount(deletePassword);
-      setConnected(false);
-      setAccountEmail(null);
-      setDisplayName(null);
-      setMediaReady(false);
-      setDeletePassword("");
-      setDeleteOpen(false);
-      refresh();
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (connected) {
-    return (
-      <div className="server-account-card is-connected">
-        <div className="server-account-head">
-          <div className="sync-provider-icon">
-            <UserRound size={15} />
-          </div>
-          <div className="sync-provider-info">
-            <span>{displayName || accountEmail || t("settings.syncServerAccount")}</span>
-            <span className="sync-provider-description">{accountEmail}</span>
-            <span className="settings-hint">{savedEndpoint}</span>
-          </div>
-          <button className="preset-button" onClick={() => void handleClick()} disabled={busy}>
-            {busy ? t("settings.syncConnecting") : t("settings.syncDisconnect")}
-          </button>
-        </div>
-        <div className="server-account-delete">
-          {!deleteOpen ? (
-            <button className="danger-link" type="button" onClick={() => setDeleteOpen(true)} disabled={busy}>
-              {t("settings.syncServerDelete")}
-            </button>
-          ) : (
-            <>
-              <p className="settings-hint">{t("settings.syncServerDeleteHint")}</p>
-              <input
-                className="server-sync-input"
-                value={deletePassword}
-                onChange={(event) => setDeletePassword(event.target.value)}
-                placeholder={t("settings.syncServerPassword")}
-                autoComplete="current-password"
-                type="password"
-              />
-              <div className="server-account-delete-actions">
-                <button className="preset-button" type="button" onClick={() => setDeleteOpen(false)} disabled={busy}>
-                  {t("common.cancel")}
-                </button>
-                <button className="danger-button" type="button" onClick={() => void handleDeleteAccount()} disabled={busy || !deletePassword}>
-                  {busy ? t("settings.syncConnecting") : t("settings.syncServerDeleteConfirm")}
-                </button>
-              </div>
-              {error && <p className="note-error">{t("settings.syncServerDeleteError")}</p>}
-            </>
-          )}
-        </div>
-        {!mediaReady && (
-          <div className="server-account-repair">
-            <div className="account-sync-summary is-warning">
-              <KeyRound size={15} />
-              <div>
-                <span>{t("settings.syncServerMediaLocked")}</span>
-                <p>{t("settings.syncServerMediaHint")}</p>
-              </div>
-            </div>
-            <input
-              className="server-sync-input"
-              value={repairPassword}
-              onChange={(event) => setRepairPassword(event.target.value)}
-              placeholder={t("settings.syncServerPassword")}
-              autoComplete="current-password"
-              type="password"
-            />
-            <button className="preset-button" onClick={() => void handleMediaRepair()} disabled={busy || !repairPassword}>
-              {busy ? t("settings.syncConnecting") : t("settings.syncServerRepairMedia")}
-            </button>
-            {error && <p className="note-error">{t("settings.syncServerAuthError")}</p>}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className={`sync-provider-row sync-provider-server ${connected ? "is-connected" : ""}`}>
-      <div className="sync-provider-icon">
-        <Server size={15} />
-      </div>
-      <div className="sync-provider-info">
-        <span>{t("settings.syncServer")}</span>
-        <span className="sync-provider-description">{t("settings.syncServerDesc")}</span>
-        <span className="settings-hint">
-          {available ? t("settings.syncServerReady") : t("settings.syncServerNotConfigured")}
-        </span>
-      </div>
-      <div className="server-account-form">
-        <div className="server-account-tabs" role="tablist" aria-label={t("settings.syncServerAccount")}>
-          <button className={mode === "login" ? "is-active" : ""} type="button" onClick={() => setMode("login")}>
-            {t("settings.syncServerLogin")}
-          </button>
-          <button className={mode === "register" ? "is-active" : ""} type="button" onClick={() => setMode("register")}>
-            {t("settings.syncServerRegister")}
-          </button>
-        </div>
-        {mode === "register" && (
-          <input
-            className="server-sync-input"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("settings.syncServerName")}
-            autoComplete="name"
-          />
-        )}
-        <input
-          className="server-sync-input"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder={t("settings.syncServerEmail")}
-          autoComplete="email"
-          inputMode="email"
-        />
-        <input
-          className="server-sync-input"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder={t("settings.syncServerPassword")}
-          autoComplete={mode === "register" ? "new-password" : "current-password"}
-          type="password"
-        />
-        {mode === "register" && (
-          <>
-            <p className={`settings-hint server-password-hint ${registerPasswordTooShort ? "is-error" : ""}`}>
-              {t("settings.syncServerPasswordHint")}
-            </p>
-            <label className="server-privacy-consent">
-              <input type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
-              <span>{t("settings.syncServerPrivacyConsent")}</span>
-            </label>
-            <button className="privacy-link" type="button" onClick={() => void commands.legal.openPrivacy()}>
-              {t("settings.syncServerPrivacyOpen")}
-            </button>
-          </>
-        )}
-        <button
-          className="preset-button"
-          onClick={() => void handleClick()}
-          disabled={busy || !available || !email.trim() || !password || registerPasswordInvalid || (mode === "register" && !privacyAccepted)}
-        >
-          {busy ? t("settings.syncConnecting") : mode === "register" ? t("settings.syncServerCreate") : t("settings.syncServerSignIn")}
-        </button>
-        {error && <p className="note-error">{t("settings.syncServerAuthError")}</p>}
-      </div>
-    </div>
-  );
-}
-
-function AccountSyncToggle() {
+function AccountSyncToggle({ refreshKey, onConnectionChange }: { refreshKey: number; onConnectionChange: () => void }) {
   const { t } = useLocale();
   const [enabled, setEnabled] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
@@ -602,8 +330,11 @@ function AccountSyncToggle() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    commands.serverSync.status().then((status) => setEnabled(status.connected)).catch(() => setEnabled(false));
-  }, []);
+    commands.serverSync.status().then((status) => {
+      setEnabled(status.connected);
+      setAccountEmail(status.accountEmail);
+    }).catch(() => setEnabled(false));
+  }, [refreshKey]);
 
   async function disable() {
     setBusy(true);
@@ -611,6 +342,8 @@ function AccountSyncToggle() {
     try {
       await commands.serverSync.setEnabled(false);
       setEnabled(false);
+      setAccountEmail(null);
+      onConnectionChange();
     } catch {
       setError(true);
     } finally {
@@ -624,8 +357,22 @@ function AccountSyncToggle() {
     try {
       const status = await commands.serverSync.setEnabled(true, password, consent);
       setEnabled(status.connected);
+      setAccountEmail(status.accountEmail);
       setConfirming(false);
       setPassword("");
+      onConnectionChange();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncNow() {
+    setBusy(true);
+    setError(false);
+    try {
+      await commands.serverSync.syncNow();
     } catch {
       setError(true);
     } finally {
@@ -662,13 +409,74 @@ function AccountSyncToggle() {
           </div>
         </div>
       )}
+      {enabled && (
+        <div className="account-sync-connected">
+          <span>{accountEmail}</span>
+          <button className="preset-button" type="button" disabled={busy} onClick={() => void syncNow()}>
+            {t("settings.syncNow")}
+          </button>
+        </div>
+      )}
       {error && <p className="note-error">{t("settings.syncServerAuthError")}</p>}
     </div>
   );
 }
 
+function ServerAccountDeletion({ refreshKey, onConnectionChange }: { refreshKey: number; onConnectionChange: () => void }) {
+  const { t } = useLocale();
+  const [available, setAvailable] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+
+  const refresh = useCallback(() => {
+    commands.serverSync.status()
+      .then((status) => setAvailable(status.connected && status.accountUserId !== null))
+      .catch(() => setAvailable(false));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    let unlisten = () => {};
+    void commands.serverSync.onCompleted(refresh).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten();
+  }, [refresh, refreshKey]);
+
+  async function deleteAccount() {
+    setBusy(true);
+    setError(false);
+    try {
+      await commands.serverSync.deleteAccount(password);
+      setAvailable(false);
+      setPassword("");
+      onConnectionChange();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!available) return null;
+  return (
+    <details className="server-sync-advanced">
+      <summary>{t("settings.syncServerDelete")}</summary>
+      <div className="server-account-delete">
+        <p className="settings-hint">{t("settings.syncServerDeleteHint")}</p>
+        <input className="server-sync-input" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t("settings.syncServerPassword")} autoComplete="current-password" type="password" />
+        <button className="danger-button" type="button" onClick={() => void deleteAccount()} disabled={busy || !password}>
+          {busy ? t("settings.syncConnecting") : t("settings.syncServerDeleteConfirm")}
+        </button>
+        {error && <p className="note-error">{t("settings.syncServerDeleteError")}</p>}
+      </div>
+    </details>
+  );
+}
+
 function SyncSection() {
   const { t } = useLocale();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshConnection = useCallback(() => setRefreshKey((value) => value + 1), []);
   return (
     <div className="settings-group">
       <span className="settings-group-label">{t("settings.sync")}</span>
@@ -680,15 +488,12 @@ function SyncSection() {
         </div>
       </div>
       <SyncReadinessCard />
-      <AccountSyncToggle />
+      <AccountSyncToggle refreshKey={refreshKey} onConnectionChange={refreshConnection} />
+      <ServerAccountDeletion refreshKey={refreshKey} onConnectionChange={refreshConnection} />
       {/* Google Drive/Yandex Disk адаптеры отключены от UI на v1 (VDS-only,
           см. docs/v1-release-plan.md) — Rust/plugin-код остаётся в дереве
           нетронутым для пост-v1, но провайдеры больше не показываются и не
           подключаемы отсюда. */}
-      <details className="server-sync-advanced">
-        <summary>{t("account.syncAdvanced")}</summary>
-        <ServerSyncRow />
-      </details>
       <p className="settings-secure-note">
         <KeyRound size={12} />
         <span>{t("settings.syncSecureNote")}</span>

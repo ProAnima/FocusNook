@@ -20,7 +20,7 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 pub fn router(state: AppState) -> axum::Router {
-    let max_body = state.config.max_blob_bytes + 1024 * 1024;
+    let max_body = state.config.max_request_body_bytes;
     axum::Router::new()
         .route("/", get(admin_console))
         .route("/healthz", get(healthz))
